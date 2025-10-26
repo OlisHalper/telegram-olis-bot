@@ -4,6 +4,11 @@ import os
 import time
 import datetime
 
+# === ДОБАВЛЕНО ДЛЯ РЕНДЕРА: Импорт Flask и threading ===
+from flask import Flask, request
+import threading
+# --- ------------------------------------------------- ---
+
 # === НАСТРОЙКИ ===
 TOKEN = os.getenv("BOT_TOKEN")
 bot = telebot.TeleBot(TOKEN)
@@ -21,91 +26,48 @@ RULES_LINK = "https://olishalper.github.io/olis-chat-rules/"
 # === МОДЕРАЦИЯ ===
 
 STOP_WORDS = [
-
- "терроризм",
-
- "заработай",
-
- "быстрый доход",
-
- "крипта",
-
- "слив",
-
- "продаю",
-
- "куплю",
-
-
+    "терроризм",
+    "заработай",
+    "быстрый доход",
+    "крипта",
+    "слив",
+    "продаю",
+    "куплю",
 
     # Войны / Экстремизм
-
- "геноцид",
-
- "фашизм",
-
- "нацизм",
-
- "экстремизм",
-
- "террор",
-
- "путин",
-
- "русня",
-
- "хохлы",
-
- "хохол",
-
- "пидор",
-
- "зеля",
-
- "зеленский",
-
-
+    "геноцид",
+    "фашизм",
+    "нацизм",
+    "экстремизм",
+    "террор",
+    "путин",
+    "русня",
+    "хохлы",
+    "хохол",
+    "пидор",
+    "зеля",
+    "зеленский",
 
     # Запрещенный контент (Педофилия, Зоофилия)
-
- "педофилия",
-
- "педофил",
-
- "зоофилия",
-
- "нсфл", # NSFW/NSFL в русском сленге
-
- "детское порно",
-
- "порнография с животными",
-
-
+    "педофилия",
+    "педофил",
+    "зоофилия",
+    "нсфл", # NSFW/NSFL в русском сленге
+    "детское порно",
+    "порнография с животными",
 
     # Дискриминация (Расизм, Сексизм, Гомофобия)
+    "пидорасы",
+    "педик",
+    "сдохни",
+    "лесбуха",
+    "лесбухи",
+    "лезбуха",
+    "лезбухи",
+    "национализм",
+    "ксенофобия",
 
- "пидорасы",
-
- "педик",
-
- "сдохни",
-
- "лесбуха",
-
- "лесбухи",
-
- "лезбуха",
-
- "лезбухи",
-
- "национализм",
-
- "ксенофобия",
-
-
-
-     # Добавьте сюда другие слова и фразы (например, нецензурная лексика, экстремизм и т.д.)
-
+    # Добавьте сюда другие слова и фразы (например, нецензурная лексика, экстремизм и т.д.)
 ]
 
 MUTE_DURATION_SECONDS = 3600  # 1 час
@@ -152,8 +114,8 @@ def send_rules(message):
 def handle_forwarded_channel_post(message):
     try:
         print(f"📢 Обнаружен новый пост из канала в группе комментариев")
-        print(f"   Message ID в группе: {message.message_id}")
-        print(f"   Тип: {message.content_type}")
+        print(f"    Message ID в группе: {message.message_id}")
+        print(f"    Тип: {message.content_type}")
         
         time.sleep(1)
         send_welcome_message(DISCUSSION_GROUP_ID, reply_to_message_id=message.message_id)
@@ -183,7 +145,7 @@ def apply_mute(chat_id, user_id, username, reason, reply_to_message_id=None):
         
         # Отправляем уведомление как ответ на пост канала (если есть)
         bot.send_message(
-            chat_id, 
+            chat_id,
             f"@{username} ⚠️ {reason}\nМут на 1 час.",
             reply_to_message_id=reply_to_message_id
         )
@@ -241,9 +203,9 @@ def handle_messages(message):
                 print(f"⚠️ Не удалось удалить сообщение {msg_id}: {e}")
         
         apply_mute(
-            chat_id, 
-            user_id, 
-            username, 
+            chat_id,
+            user_id,
+            username,
             f"Флуд ({FLOOD_LIMIT}+ сообщений за {TIME_WINDOW_SECONDS} секунд)",
             reply_to_message_id=channel_post_id
         )
@@ -257,9 +219,9 @@ def handle_messages(message):
             if word in text:
                 bot.delete_message(chat_id, message.message_id)
                 apply_mute(
-                    chat_id, 
-                    user_id, 
-                    username, 
+                    chat_id,
+                    user_id,
+                    username,
                     f"Стоп-слово: {word}",
                     reply_to_message_id=channel_post_id
                 )
@@ -267,4 +229,35 @@ def handle_messages(message):
 
 # === ЗАПУСК ===
 print("🚀 Бот запущен и слушает события...")
-bot.infinity_polling()
+
+# --- Новый запуск с Flask для совместимости с бесплатным Web Service Render ---
+# Используем Flask для прослушивания порта, чтобы Render не выдавал ошибку,
+# а сам бот запускаем в отдельном потоке (threading), чтобы он работал 24/7.
+
+if 'RENDER' in os.environ:
+    # 1. Запуск Polling в отдельном потоке
+    # allowed_updates='message' - бот слушает только сообщения в группе (для экономии трафика)
+    polling_thread = threading.Thread(target=lambda: bot.infinity_polling(allowed_updates=['message']), daemon=True)
+    polling_thread.start()
+
+    # 2. Создание заглушки Flask для прослушивания порта 
+    app = Flask(__name__)
+
+    @app.route('/')
+    def index():
+        return 'Telegram bot running (polling mode)'
+
+    @app.route('/health')
+    def health():
+        return 'OK'
+
+    port = int(os.environ.get('PORT', 5000))
+    # Flask запускается в фоновом режиме, чтобы бот мог работать
+    if __name__ == '__main__':
+        app.run(host='0.0.0.0', port=port)
+
+else:
+    # Обычный запуск на локальном ПК
+    bot.infinity_polling()
+
+# --- ------------------------------------------------------------------- ---
