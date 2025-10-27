@@ -75,6 +75,10 @@ FLOOD_LIMIT = 10
 TIME_WINDOW_SECONDS = 10
 USER_ACTIVITY = {}  # {user_id: [(timestamp, message_id), ...]}
 
+# === НОВОЕ: ОТСЛЕЖИВАНИЕ МЕДИА-ГРУПП ===
+PROCESSED_MEDIA_GROUPS = {}  # {media_group_id: timestamp}
+MEDIA_GROUP_TIMEOUT = 60  # секунд
+
 # === КНОПКИ ===
 def get_buttons():
     keyboard = InlineKeyboardMarkup()
@@ -110,17 +114,39 @@ def send_rules(message):
     send_welcome_message(message.chat.id)
 
 # === ОБРАБОТКА АВТОМАТИЧЕСКИ ПЕРЕСЛАННЫХ ПОСТОВ В ГРУППУ КОММЕНТАРИЕВ ===
-@bot.message_handler(func=lambda m: m.chat.id == DISCUSSION_GROUP_ID and m.is_automatic_forward, content_types=['text', 'photo', 'video', 'audio', 'voice', 'video_note', 'document', 'sticker', 'animation', 'poll'])
-def handle_forwarded_channel_post(message):
+@bot.channel_post_handler(content_types=['text', 'photo', 'video', 'audio', 'voice', 'video_note', 'document', 'sticker', 'animation', 'poll'])
+def handle_channel_post(message):
+    global PROCESSED_MEDIA_GROUPS
+    
     try:
-        print(f"📢 Обнаружен новый пост из канала в группе комментариев")
-        print(f"    Message ID в группе: {message.message_id}")
-        print(f"    Тип: {message.content_type}")
-        
-        time.sleep(1)
-        send_welcome_message(DISCUSSION_GROUP_ID, reply_to_message_id=message.message_id)
+        # Проверяем, что это пост из нужного канала
+        if message.chat.id == CHANNEL_ID:
+            # Очищаем старые медиа-группы
+            now = time.time()
+            PROCESSED_MEDIA_GROUPS = {k: v for k, v in PROCESSED_MEDIA_GROUPS.items() if now - v < MEDIA_GROUP_TIMEOUT}
+            
+            # Проверяем, является ли это частью медиа-группы
+            if message.media_group_id:
+                # Если уже обработали эту медиа-группу, пропускаем
+                if message.media_group_id in PROCESSED_MEDIA_GROUPS:
+                    print(f"⏭ Пропуск дубликата медиа-группы {message.media_group_id}")
+                    return
+                
+                # Отмечаем медиа-группу как обработанную
+                PROCESSED_MEDIA_GROUPS[message.media_group_id] = now
+                print(f"📢 Новая медиа-группа из канала: {message.media_group_id}")
+            else:
+                print(f"📢 Новый пост в канале (ID: {message.message_id})")
+            
+            print(f"   Тип: {message.content_type}")
+            
+            # Отправляем приветствие в группу комментариев
+            time.sleep(1)
+            send_welcome_message(DISCUSSION_GROUP_ID, reply_to_message_id=message.message_id)
+        else:
+            print(f"⏭ Игнорируется пост из чата {message.chat.id}")
     except Exception as e:
-        print(f"⚠️ Ошибка при обработке пересланного поста: {e}")
+        print(f"⚠️ Ошибка при обработке поста: {e}")
 
 # === МУТ ===
 def apply_mute(chat_id, user_id, username, reason, reply_to_message_id=None):
@@ -237,7 +263,7 @@ print("🚀 Бот запущен и слушает события...")
 if 'RENDER' in os.environ:
     # 1. Запуск Polling в отдельном потоке
     # allowed_updates='message' - бот слушает только сообщения в группе (для экономии трафика)
-    polling_thread = threading.Thread(target=lambda: bot.infinity_polling(allowed_updates=['message']), daemon=True)
+    polling_thread = threading.Thread(target=lambda: bot.infinity_polling(allowed_updates=['message', 'channel_post']), daemon=True)
     polling_thread.start()
 
     # 2. Создание заглушки Flask для прослушивания порта 
