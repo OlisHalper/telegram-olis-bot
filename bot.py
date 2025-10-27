@@ -4,6 +4,7 @@ import os
 import time
 import datetime
 from flask import Flask, request
+import traceback
 
 # === НАСТРОЙКИ ===
 TOKEN = os.getenv("BOT_TOKEN")
@@ -19,6 +20,7 @@ CHANNEL_LINK = "https://www.youtube.com/@thisolis"
 INST_LINK = "https://www.instagram.com/whoisolis/"
 RULES_LINK = "https://olishalper.github.io/olis-chat-rules/"
 
+# === МОДЕРАЦИЯ ===
 STOP_WORDS = [
     "терроризм",
     "заработай",
@@ -101,6 +103,7 @@ def send_welcome_message(chat_id, reply_to_message_id=None):
         print(f"✅ Приветствие отправлено как ответ на сообщение {reply_to_message_id} в чат {chat_id}")
     except Exception as e:
         print(f"⚠️ Ошибка отправки приветствия: {e}")
+        traceback.print_exc()
 
 # === КОМАНДА /start ===
 @bot.message_handler(commands=['start'])
@@ -137,6 +140,7 @@ def handle_forwarded_channel_post(message):
         send_welcome_message(DISCUSSION_GROUP_ID, reply_to_message_id=message.message_id)
     except Exception as e:
         print(f"⚠️ Ошибка при обработке пересланного поста: {e}")
+        traceback.print_exc()
 
 # === МУТ ===
 def apply_mute(chat_id, user_id, username, reason, reply_to_message_id=None):
@@ -166,6 +170,7 @@ def apply_mute(chat_id, user_id, username, reason, reply_to_message_id=None):
         print(f"🔇 Мут {username} до {mute_until}")
     except Exception as e:
         print(f"❌ Ошибка при выдаче мута: {e}")
+        traceback.print_exc()
 
 # === ФУНКЦИЯ ДЛЯ ПОИСКА ИСХОДНОГО ПОСТА КАНАЛА ===
 def find_channel_post_id(message):
@@ -241,13 +246,19 @@ if 'RENDER' in os.environ:
     app = Flask(__name__)
     
     # Устанавливаем webhook
-    WEBHOOK_URL = os.getenv('RENDER_EXTERNAL_URL')  # Render автоматически предоставляет этот URL
-    if WEBHOOK_URL:
+    WEBHOOK_URL = os.getenv('RENDER_EXTERNAL_URL')
+    if not WEBHOOK_URL:
+        print("⚠️ RENDER_EXTERNAL_URL не установлен! Используйте URL вашего приложения Render.")
+    else:
         webhook_path = f"/{TOKEN}"
-        bot.remove_webhook()
-        time.sleep(1)
-        bot.set_webhook(url=f"{WEBHOOK_URL}{webhook_path}")
-        print(f"✅ Webhook установлен: {WEBHOOK_URL}{webhook_path}")
+        try:
+            bot.remove_webhook()
+            time.sleep(1)
+            bot.set_webhook(url=f"{WEBHOOK_URL}{webhook_path}")
+            print(f"✅ Webhook установлен: {WEBHOOK_URL}{webhook_path}")
+        except Exception as e:
+            print(f"❌ Ошибка установки webhook: {e}")
+            traceback.print_exc()
     
     @app.route('/')
     def index():
@@ -259,10 +270,17 @@ if 'RENDER' in os.environ:
     
     @app.route(f'/{TOKEN}', methods=['POST'])
     def webhook():
-        json_string = request.get_data().decode('utf-8')
-        update = telebot.types.Update.de_json(json_string)
-        bot.process_new_updates([update])
-        return 'OK', 200
+        try:
+            json_string = request.get_data().decode('utf-8')
+            print(f"📥 Получен webhook: {json_string[:200]}...")  # Логируем первые 200 символов
+            update = telebot.types.Update.de_json(json_string)
+            bot.process_new_updates([update])
+            print(f"✅ Update обработан успешно")
+            return 'OK', 200
+        except Exception as e:
+            print(f"❌ Ошибка обработки webhook: {e}")
+            traceback.print_exc()
+            return 'ERROR', 500
     
     port = int(os.environ.get('PORT', 5000))
     if __name__ == '__main__':
