@@ -3,11 +3,7 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ChatPermis
 import os
 import time
 import datetime
-
-# === ДОБАВЛЕНО ДЛЯ РЕНДЕРА: Импорт Flask и threading ===
 from flask import Flask, request
-import threading
-# --- ------------------------------------------------- ---
 
 # === НАСТРОЙКИ ===
 TOKEN = os.getenv("BOT_TOKEN")
@@ -22,8 +18,6 @@ GIF_URL = "https://media.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3bThjMXZkMTExb2IzZW9z
 CHANNEL_LINK = "https://www.youtube.com/@thisolis"
 INST_LINK = "https://www.instagram.com/whoisolis/"
 RULES_LINK = "https://olishalper.github.io/olis-chat-rules/"
-
-# === МОДЕРАЦИЯ ===
 
 STOP_WORDS = [
     "терроризм",
@@ -75,6 +69,10 @@ FLOOD_LIMIT = 10
 TIME_WINDOW_SECONDS = 10
 USER_ACTIVITY = {}  # {user_id: [(timestamp, message_id), ...]}
 
+# === ОТСЛЕЖИВАНИЕ МЕДИА-ГРУПП ===
+PROCESSED_MEDIA_GROUPS = {}  # {media_group_id: timestamp}
+MEDIA_GROUP_TIMEOUT = 60  # секунд
+
 # === КНОПКИ ===
 def get_buttons():
     keyboard = InlineKeyboardMarkup()
@@ -112,10 +110,28 @@ def send_rules(message):
 # === ОБРАБОТКА АВТОМАТИЧЕСКИ ПЕРЕСЛАННЫХ ПОСТОВ В ГРУППУ КОММЕНТАРИЕВ ===
 @bot.message_handler(func=lambda m: m.chat.id == DISCUSSION_GROUP_ID and m.is_automatic_forward, content_types=['text', 'photo', 'video', 'audio', 'voice', 'video_note', 'document', 'sticker', 'animation', 'poll'])
 def handle_forwarded_channel_post(message):
+    global PROCESSED_MEDIA_GROUPS
+    
     try:
-        print(f"📢 Обнаружен новый пост из канала в группе комментариев")
-        print(f"    Message ID в группе: {message.message_id}")
-        print(f"    Тип: {message.content_type}")
+        # Очищаем старые медиа-группы
+        now = time.time()
+        PROCESSED_MEDIA_GROUPS = {k: v for k, v in PROCESSED_MEDIA_GROUPS.items() if now - v < MEDIA_GROUP_TIMEOUT}
+        
+        # Проверяем, является ли это частью медиа-группы
+        if message.media_group_id:
+            # Если уже обработали эту медиа-группу, пропускаем
+            if message.media_group_id in PROCESSED_MEDIA_GROUPS:
+                print(f"⏭ Пропуск дубликата медиа-группы {message.media_group_id}")
+                return
+            
+            # Отмечаем медиа-группу как обработанную
+            PROCESSED_MEDIA_GROUPS[message.media_group_id] = now
+            print(f"📢 Новая медиа-группа из канала: {message.media_group_id}")
+        else:
+            print(f"📢 Новый пост из канала")
+        
+        print(f"   Message ID в группе: {message.message_id}")
+        print(f"   Тип: {message.content_type}")
         
         time.sleep(1)
         send_welcome_message(DISCUSSION_GROUP_ID, reply_to_message_id=message.message_id)
@@ -127,7 +143,6 @@ def apply_mute(chat_id, user_id, username, reason, reply_to_message_id=None):
     try:
         mute_until = datetime.datetime.now() + datetime.timedelta(seconds=MUTE_DURATION_SECONDS)
         
-        # Разрешаем все, кроме отправки сообщений и медиа
         permissions = ChatPermissions(
             can_send_messages=False,
             can_send_media_messages=False,
@@ -143,7 +158,6 @@ def apply_mute(chat_id, user_id, username, reason, reply_to_message_id=None):
             until_date=int(mute_until.timestamp())
         )
         
-        # Отправляем уведомление как ответ на пост канала (если есть)
         bot.send_message(
             chat_id,
             f"@{username} ⚠️ {reason}\nМут на 1 час.",
@@ -157,11 +171,9 @@ def apply_mute(chat_id, user_id, username, reason, reply_to_message_id=None):
 def find_channel_post_id(message):
     """Находит ID автоматически пересланного поста канала в треде"""
     try:
-        # Если это ответ на сообщение, проверяем родительское сообщение
         if message.reply_to_message:
             if message.reply_to_message.is_automatic_forward:
                 return message.reply_to_message.message_id
-            # Рекурсивно проверяем цепочку ответов
             return find_channel_post_id(message.reply_to_message)
         return None
     except:
@@ -172,7 +184,6 @@ def find_channel_post_id(message):
 def handle_messages(message):
     global USER_ACTIVITY
     
-    # Игнорируем автоматически пересланные посты из канала
     if message.is_automatic_forward:
         return
     
@@ -183,19 +194,15 @@ def handle_messages(message):
     username = message.from_user.username or message.from_user.first_name
     chat_id = message.chat.id
     
-    # Ищем исходный пост канала для ответа
     channel_post_id = find_channel_post_id(message)
 
-    # антифлуд - теперь сохраняем также message_id
     now = datetime.datetime.now().timestamp()
     USER_ACTIVITY.setdefault(user_id, [])
     
-    # Очищаем старые записи
     USER_ACTIVITY[user_id] = [(t, msg_id) for t, msg_id in USER_ACTIVITY[user_id] if now - t < TIME_WINDOW_SECONDS]
     USER_ACTIVITY[user_id].append((now, message.message_id))
 
     if len(USER_ACTIVITY[user_id]) >= FLOOD_LIMIT:
-        # Удаляем ВСЕ сообщения из флуда
         for timestamp, msg_id in USER_ACTIVITY[user_id]:
             try:
                 bot.delete_message(chat_id, msg_id)
@@ -212,7 +219,6 @@ def handle_messages(message):
         USER_ACTIVITY[user_id] = []
         return
 
-    # стоп-слова
     if message.text:
         text = message.text.lower()
         for word in STOP_WORDS:
@@ -227,37 +233,41 @@ def handle_messages(message):
                 )
                 break
 
-# === ЗАПУСК ===
+# === ЗАПУСК С WEBHOOK ДЛЯ RENDER ===
 print("🚀 Бот запущен и слушает события...")
 
-# --- Новый запуск с Flask для совместимости с бесплатным Web Service Render ---
-# Используем Flask для прослушивания порта, чтобы Render не выдавал ошибку,
-# а сам бот запускаем в отдельном потоке (threading), чтобы он работал 24/7.
-
 if 'RENDER' in os.environ:
-    # 1. Запуск Polling в отдельном потоке
-    # allowed_updates='message' - бот слушает только сообщения в группе (для экономии трафика)
-    polling_thread = threading.Thread(target=lambda: bot.infinity_polling(allowed_updates=['message']), daemon=True)
-    polling_thread.start()
-
-    # 2. Создание заглушки Flask для прослушивания порта 
+    # Webhook режим для Render
     app = Flask(__name__)
-
+    
+    # Устанавливаем webhook
+    WEBHOOK_URL = os.getenv('RENDER_EXTERNAL_URL')  # Render автоматически предоставляет этот URL
+    if WEBHOOK_URL:
+        webhook_path = f"/{TOKEN}"
+        bot.remove_webhook()
+        time.sleep(1)
+        bot.set_webhook(url=f"{WEBHOOK_URL}{webhook_path}")
+        print(f"✅ Webhook установлен: {WEBHOOK_URL}{webhook_path}")
+    
     @app.route('/')
     def index():
-        return 'Telegram bot running (polling mode)'
-
+        return 'Telegram bot running (webhook mode)'
+    
     @app.route('/health')
     def health():
         return 'OK'
-
+    
+    @app.route(f'/{TOKEN}', methods=['POST'])
+    def webhook():
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return 'OK', 200
+    
     port = int(os.environ.get('PORT', 5000))
-    # Flask запускается в фоновом режиме, чтобы бот мог работать
     if __name__ == '__main__':
         app.run(host='0.0.0.0', port=port)
 
 else:
-    # Обычный запуск на локальном ПК
+    # Polling режим для локального запуска
     bot.infinity_polling()
-
-# --- ------------------------------------------------------------------- ---
