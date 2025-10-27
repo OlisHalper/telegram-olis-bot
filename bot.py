@@ -1,21 +1,26 @@
 import os
 import time
 import datetime
-import threading
 from flask import Flask, request
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ChatPermissions
+import logging
 
-# === НАСТРОЙКИ ===
+# === НАСТРОЙКИ ЛОГИРОВАНИЯ ===
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# === КОНФИГУРАЦИЯ БОТА ===
 TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
-    raise ValueError("❌ BOT_TOKEN не найден. Установи его в переменные окружения!")
+    logging.error("❌ BOT_TOKEN не найден. Установи его в переменные окружения!")
+    exit(1)
 
 bot = telebot.TeleBot(TOKEN)
 
-# === ОСНОВНЫЕ ССЫЛКИ ===
-CHANNEL_USERNAME = "whoisolis"  # без @
-DISCUSSION_GROUP_ID = -1003083438241  # ID группы комментариев
+# === ОСНОВНЫЕ ССЫЛКИ И ID ===
+CHANNEL_USERNAME = "whoisolis"  # без @
+# ID группы комментариев
+DISCUSSION_GROUP_ID = -1003083438241
 
 GIF_URL = "https://media.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3bThjMXZkMTExb2IzZW9zdm0wNjRieG1haXVrcGVicHBsNzJqNXZ0eSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/dT6f2FnfY24C1L1TIR/giphy.gif"
 CHANNEL_LINK = "https://www.youtube.com/@thisolis"
@@ -68,12 +73,15 @@ STOP_WORDS = [
     # Добавьте сюда другие слова и фразы (например, нецензурная лексика, экстремизм и т.д.)
 ]
 
-MUTE_DURATION_SECONDS = 3600  # 1 час
-MUTE_MESSAGE = "🚨 Сообщение удалено за нарушение правил. Мут на 1 час."
-
+MUTE_DURATION_SECONDS = 3600  # 1 час
 FLOOD_LIMIT = 10
 TIME_WINDOW_SECONDS = 10
-USER_ACTIVITY = {}  # {user_id: [timestamps...]}
+# {user_id: [(timestamp, message_id), ...]} - хранит метку времени и ID сообщения
+USER_ACTIVITY = {}  
+
+# === ОТСЛЕЖИВАНИЕ МЕДИА-ГРУПП ===
+LAST_MEDIA_GROUP = {}
+MEDIA_GROUP_TIMEOUT = 5 # секунд
 
 # === КНОПКИ ===
 def get_buttons():
@@ -84,7 +92,7 @@ def get_buttons():
 # === ПРИВЕТСТВИЕ ===
 def send_welcome_message(chat_id, reply_to_message_id=None):
     caption = (
-        "👋 Привет! Ты попал в комментарии под моим постом 🐳\n\n"
+        "👋 Привет ты попал в комментарии под моим постом. Внизу интересные ссылки и правила поведения (пожалуйста почитай их страничка сделана вроде симпатично\n\n"
         "📸 Мой <a href='{inst}'>инстаграм</a>\n"
         "🔴 Мой <a href='{yt}'>ютуб</a>\n\n"
         "Написав комментарий, ты соглашаешься с "
@@ -100,39 +108,56 @@ def send_welcome_message(chat_id, reply_to_message_id=None):
             reply_markup=get_buttons(),
             reply_to_message_id=reply_to_message_id
         )
-        print(f"✅ Приветствие отправлено в чат {chat_id}")
+        logging.info(f"✅ Приветствие (GIF) отправлено в чат {chat_id}")
     except Exception as e:
-        print(f"⚠️ Ошибка отправки приветствия: {e}")
-        bot.send_message(chat_id, caption, parse_mode="HTML", reply_markup=get_buttons())
+        logging.warning(f"⚠️ Ошибка отправки GIF-приветствия: {e}. Отправка текстовой версии.")
+        try:
+            bot.send_message(
+                chat_id, 
+                caption, 
+                parse_mode="HTML", 
+                reply_markup=get_buttons(),
+                reply_to_message_id=reply_to_message_id
+            )
+            logging.info(f"✅ Приветствие (текст) отправлено.")
+        except Exception as e_text:
+            logging.error(f"❌ Критическая ошибка: не удалось отправить даже текстовое приветствие: {e_text}", exc_info=True)
+
 
 # === КОМАНДА /start ===
 @bot.message_handler(commands=['start'])
 def send_rules(message):
-    send_welcome_message(message.chat.id)
+    # Отправляем приветствие в ЛС или в ответ на сообщение в группе
+    if message.chat.type == 'private':
+        send_welcome_message(message.chat.id)
+    elif message.chat.id == DISCUSSION_GROUP_ID:
+        # Находим ID поста, на который отвечает сообщение, если это тред
+        reply_id = getattr(message.reply_to_message, 'message_id', None)
+        send_welcome_message(message.chat.id, reply_to_message_id=reply_id)
 
-# === ОТСЛЕЖИВАНИЕ ПОСТОВ ===
-LAST_MEDIA_GROUP = {}
-
+# === ОБРАБОТКА НОВЫХ ПОСТОВ В КАНАЛЕ (ЛУЧШИЙ МЕТОД) ===
 @bot.channel_post_handler(content_types=['all'])
 def handle_channel_post(message):
     global LAST_MEDIA_GROUP
+    
     username = message.chat.username
     media_group_id = getattr(message, 'media_group_id', None)
 
-    # фильтр по каналу
-    if not username or username.lower() != CHANNEL_USERNAME.lower():
+    # Проверяем, что пост именно из нашего канала
+    if username and username.lower() != CHANNEL_USERNAME.lower():
         return
 
-    # защита от дублирования при нескольких фото/видео
+    # Защита от дублирования при альбомах (медиа-группах)
     if media_group_id:
         last_time = LAST_MEDIA_GROUP.get(media_group_id)
-        if last_time and time.time() - last_time < 5:
-            print(f"⏭ Пропущен дубликат альбома {media_group_id}")
+        if last_time and time.time() - last_time < MEDIA_GROUP_TIMEOUT:
+            logging.info(f"⏭ Пропущен дубликат альбома {media_group_id}")
             return
         LAST_MEDIA_GROUP[media_group_id] = time.time()
+        time.sleep(1) # Небольшая задержка для альбомов, чтобы избежать гонки
 
-    print("📢 Новый пост в канале! Отправляю сообщение в комментарии...")
-    time.sleep(1.5)
+    logging.info(f"📢 Новый пост в канале (ID: {message.message_id}). Отправляю приветствие в комментарии...")
+    # message.message_id становится ID треда в группе комментариев
     send_welcome_message(DISCUSSION_GROUP_ID, reply_to_message_id=message.message_id)
 
 # === МУТ ===
@@ -142,76 +167,120 @@ def apply_mute(chat_id, user_id, username, reason, reply_to_message_id=None):
         bot.restrict_chat_member(
             chat_id=chat_id,
             user_id=user_id,
+            # Разрешаем только просматривать историю
             permissions=ChatPermissions(can_send_messages=False),
-            until_date=mute_until.timestamp()
+            until_date=int(mute_until.timestamp())
         )
         bot.send_message(
             chat_id,
-            f"@{username} ⚠️ {reason}\nМут на 1 час.",
+            f"@{username} ⚠️ Причина: {reason}\nМут на 1 час.",
             reply_to_message_id=reply_to_message_id
         )
-        print(f"🔇 Мут выдан @{username} до {mute_until}")
+        logging.warning(f"🔇 Мут выдан {username} до {mute_until}. Причина: {reason}")
     except Exception as e:
-        print(f"❌ Ошибка при выдаче мута: {e}")
+        logging.error(f"❌ Ошибка при выдаче мута. Проверьте права бота: {e}", exc_info=True)
+
 
 # === АНТИФЛУД И СТОП-СЛОВА ===
-@bot.message_handler(content_types=['text', 'sticker', 'photo', 'video', 'document', 'audio', 'voice'])
+@bot.message_handler(content_types=['text', 'sticker', 'photo', 'video', 'document', 'audio', 'voice', 'animation'])
 def handle_messages(message):
-    if message.chat.type not in ['group', 'supergroup']:
+    # Обрабатываем сообщения только в целевой группе
+    if message.chat.id != DISCUSSION_GROUP_ID:
         return
 
     user_id = message.from_user.id
     username = message.from_user.username or message.from_user.first_name
     chat_id = message.chat.id
+    message_id = message.message_id
 
-    # антифлуд
+    # --- Антифлуд логика ---
     now = datetime.datetime.now().timestamp()
     USER_ACTIVITY.setdefault(user_id, [])
-    USER_ACTIVITY[user_id] = [t for t in USER_ACTIVITY[user_id] if now - t < TIME_WINDOW_SECONDS]
-    USER_ACTIVITY[user_id].append(now)
+    
+    # 1. Фильтруем старые записи и добавляем текущее сообщение (timestamp, message_id)
+    USER_ACTIVITY[user_id] = [(t, msg_id) for t, msg_id in USER_ACTIVITY[user_id] if now - t < TIME_WINDOW_SECONDS]
+    USER_ACTIVITY[user_id].append((now, message_id))
 
     if len(USER_ACTIVITY[user_id]) >= FLOOD_LIMIT:
-        bot.delete_message(chat_id, message.message_id)
-        apply_mute(chat_id, user_id, username, f"Флуд ({FLOOD_LIMIT}+ сообщений за {TIME_WINDOW_SECONDS} сек)")
-        USER_ACTIVITY[user_id] = []
+        logging.warning(f"🚨 Обнаружен флуд от пользователя {user_id} (@{username})")
+
+        # 2. Удаляем все сообщения, которые вызвали флуд
+        for timestamp, msg_id in USER_ACTIVITY[user_id]:
+            try:
+                bot.delete_message(chat_id, msg_id)
+            except Exception as e:
+                logging.error(f"⚠️ Не удалось удалить сообщение {msg_id} во время флуда: {e}")
+            
+        # 3. Выдаем мут
+        apply_mute(chat_id, user_id, username, f"Флуд ({FLOOD_LIMIT}+ сообщений за {TIME_WINDOW_SECONDS} сек)", reply_to_message_id=message_id)
+        USER_ACTIVITY[user_id] = [] # Очищаем после мута, чтобы избежать повторного мута сразу же
         return
 
-    # стоп-слова
+    # --- Стоп-слова логика ---
     if message.text:
         text = message.text.lower()
         for word in STOP_WORDS:
             if word in text:
-                bot.delete_message(chat_id, message.message_id)
-                apply_mute(chat_id, user_id, username, f"Стоп-слово: {word}")
-                break
+                logging.warning(f"🚨 Обнаружено стоп-слово '{word}' от @{username}")
+                
+                try:
+                    bot.delete_message(chat_id, message_id)
+                except Exception as e:
+                    logging.error(f"⚠️ Не удалось удалить сообщение со стоп-словом: {e}")
+                
+                apply_mute(chat_id, user_id, username, f"Стоп-слово: {word}", reply_to_message_id=message_id)
+                return
 
-# === WEBHOOK для Render ===
+
+# === WEBHOOK для Render (ИСПРАВЛЕНО) ===
 app = Flask(__name__)
+
+# Определяем путь вебхука как /ТОКЕН для совместимости с Telegram
+WEBHOOK_PATH = f"/{TOKEN}"
 
 @app.route('/')
 def index():
-    return '🤖 Telegram bot is running via webhook', 200
+    return f'🤖 Telegram bot is running via webhook on path {WEBHOOK_PATH}', 200
 
-@app.route('/webhook', methods=['POST'])
+# !!! ИСПРАВЛЕННЫЙ РОУТ !!!
+# Теперь Flask будет слушать ТОЧНО тот путь, который использует Telegram: /<token>
+@app.route(WEBHOOK_PATH, methods=['POST'])
 def webhook():
     if request.headers.get('content-type') == 'application/json':
         json_str = request.get_data().decode('UTF-8')
-        update = telebot.types.Update.de_json(json_str)
-        bot.process_new_updates([update])
+        
+        try:
+            update = telebot.types.Update.de_json(json_str)
+            bot.process_new_updates([update])
+        except Exception as e:
+            logging.error(f"❌ Ошибка обработки обновления: {e}", exc_info=True)
+            # В случае ошибки все равно возвращаем 200, чтобы избежать повторных попыток Telegram
+            
         return '', 200
     else:
         return 'Unsupported Media Type', 415
 
 # === ЗАПУСК ===
 if __name__ == '__main__':
-    print("🚀 Бот запущен в режиме WEBHOOK для Render")
+    
+    hostname = os.getenv('RENDER_EXTERNAL_HOSTNAME')
+    if not hostname:
+        logging.error("❌ Переменная RENDER_EXTERNAL_HOSTNAME не найдена. Бот не сможет настроить вебхук.")
+        exit(1)
 
-    WEBHOOK_URL = f"https://{os.getenv('RENDER_EXTERNAL_HOSTNAME')}/webhook"
+    # Формируем полный URL с токеном в пути
+    WEBHOOK_URL = f"https://{hostname}{WEBHOOK_PATH}"
 
-    # Удаляем старый вебхук и ставим новый
-    bot.remove_webhook()
-    time.sleep(1)
-    bot.set_webhook(url=WEBHOOK_URL)
+    try:
+        bot.remove_webhook()
+        time.sleep(0.5)
+        bot.set_webhook(url=WEBHOOK_URL)
+        logging.info(f"✅ Webhook установлен успешно: {WEBHOOK_URL}")
+    except Exception as e:
+        logging.error(f"❌ Не удалось установить Webhook: {e}", exc_info=True)
+        exit(1)
 
+    logging.info("🚀 Бот запущен в режиме WEBHOOK для Render")
+    
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port)
