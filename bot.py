@@ -66,14 +66,12 @@ STOP_WORDS = [
     # Добавьте сюда другие слова и фразы (например, нецензурная лексика, экстремизм и т.д.)
 ]
 
-MUTE_DURATION_SECONDS = 3600  # 1 час
+MUTE_DURATION_SECONDS = 3600
 FLOOD_LIMIT = 10
 TIME_WINDOW_SECONDS = 10
-USER_ACTIVITY = {}  # {user_id: [(timestamp, message_id), ...]}
-
-# === ОТСЛЕЖИВАНИЕ МЕДИА-ГРУПП ===
-PROCESSED_MEDIA_GROUPS = {}  # {media_group_id: timestamp}
-MEDIA_GROUP_TIMEOUT = 60  # секунд
+USER_ACTIVITY = {}
+PROCESSED_MEDIA_GROUPS = {}
+MEDIA_GROUP_TIMEOUT = 60
 
 # === КНОПКИ ===
 def get_buttons():
@@ -110,89 +108,57 @@ def send_welcome_message(chat_id, reply_to_message_id=None):
 def send_rules(message):
     send_welcome_message(message.chat.id)
 
-# === ОБРАБОТКА АВТОМАТИЧЕСКИ ПЕРЕСЛАННЫХ ПОСТОВ В ГРУППУ КОММЕНТАРИЕВ ===
-@bot.message_handler(func=lambda m: m.chat.id == DISCUSSION_GROUP_ID and m.is_automatic_forward, content_types=['text', 'photo', 'video', 'audio', 'voice', 'video_note', 'document', 'sticker', 'animation', 'poll'])
-def handle_forwarded_channel_post(message):
-    global PROCESSED_MEDIA_GROUPS
+# === ОБРАБОТЧИК СООБЩЕНИЙ С ДЕТАЛЬНЫМ ЛОГИРОВАНИЕМ ===
+@bot.message_handler(func=lambda m: True, content_types=['text', 'photo', 'video', 'audio', 'voice', 'video_note', 'document', 'sticker', 'animation', 'poll'])
+def handle_all_messages(message):
+    global PROCESSED_MEDIA_GROUPS, USER_ACTIVITY
     
-    try:
-        # Очищаем старые медиа-группы
-        now = time.time()
-        PROCESSED_MEDIA_GROUPS = {k: v for k, v in PROCESSED_MEDIA_GROUPS.items() if now - v < MEDIA_GROUP_TIMEOUT}
-        
-        # Проверяем, является ли это частью медиа-группы
-        if message.media_group_id:
-            # Если уже обработали эту медиа-группу, пропускаем
-            if message.media_group_id in PROCESSED_MEDIA_GROUPS:
-                print(f"⏭ Пропуск дубликата медиа-группы {message.media_group_id}")
-                return
+    # Детальное логирование каждого сообщения
+    print(f"\n{'='*60}")
+    print(f"📨 Получено сообщение:")
+    print(f"   Chat ID: {message.chat.id}")
+    print(f"   Chat Type: {message.chat.type}")
+    print(f"   Message ID: {message.message_id}")
+    print(f"   Content Type: {message.content_type}")
+    print(f"   Is Automatic Forward: {message.is_automatic_forward}")
+    if hasattr(message, 'sender_chat') and message.sender_chat:
+        print(f"   Sender Chat ID: {message.sender_chat.id}")
+    if hasattr(message, 'forward_from_chat') and message.forward_from_chat:
+        print(f"   Forward From Chat ID: {message.forward_from_chat.id}")
+    if message.media_group_id:
+        print(f"   Media Group ID: {message.media_group_id}")
+    print(f"{'='*60}\n")
+    
+    # ОБРАБОТКА АВТОМАТИЧЕСКИ ПЕРЕСЛАННЫХ ПОСТОВ ИЗ КАНАЛА
+    if message.chat.id == DISCUSSION_GROUP_ID and message.is_automatic_forward:
+        try:
+            now = time.time()
+            PROCESSED_MEDIA_GROUPS = {k: v for k, v in PROCESSED_MEDIA_GROUPS.items() if now - v < MEDIA_GROUP_TIMEOUT}
             
-            # Отмечаем медиа-группу как обработанную
-            PROCESSED_MEDIA_GROUPS[message.media_group_id] = now
-            print(f"📢 Новая медиа-группа из канала: {message.media_group_id}")
-        else:
-            print(f"📢 Новый пост из канала")
-        
-        print(f"   Message ID в группе: {message.message_id}")
-        print(f"   Тип: {message.content_type}")
-        
-        time.sleep(1)
-        send_welcome_message(DISCUSSION_GROUP_ID, reply_to_message_id=message.message_id)
-    except Exception as e:
-        print(f"⚠️ Ошибка при обработке пересланного поста: {e}")
-        traceback.print_exc()
-
-# === МУТ ===
-def apply_mute(chat_id, user_id, username, reason, reply_to_message_id=None):
-    try:
-        mute_until = datetime.datetime.now() + datetime.timedelta(seconds=MUTE_DURATION_SECONDS)
-        
-        permissions = ChatPermissions(
-            can_send_messages=False,
-            can_send_media_messages=False,
-            can_send_polls=False,
-            can_send_other_messages=False,
-            can_add_web_page_previews=False
-        )
-        
-        bot.restrict_chat_member(
-            chat_id=chat_id,
-            user_id=user_id,
-            permissions=permissions,
-            until_date=int(mute_until.timestamp())
-        )
-        
-        bot.send_message(
-            chat_id,
-            f"@{username} ⚠️ {reason}\nМут на 1 час.",
-            reply_to_message_id=reply_to_message_id
-        )
-        print(f"🔇 Мут {username} до {mute_until}")
-    except Exception as e:
-        print(f"❌ Ошибка при выдаче мута: {e}")
-        traceback.print_exc()
-
-# === ФУНКЦИЯ ДЛЯ ПОИСКА ИСХОДНОГО ПОСТА КАНАЛА ===
-def find_channel_post_id(message):
-    """Находит ID автоматически пересланного поста канала в треде"""
-    try:
-        if message.reply_to_message:
-            if message.reply_to_message.is_automatic_forward:
-                return message.reply_to_message.message_id
-            return find_channel_post_id(message.reply_to_message)
-        return None
-    except:
-        return None
-
-# === АНТИФЛУД И СТОП-СЛОВА ===
-@bot.message_handler(content_types=['text', 'sticker', 'photo', 'video', 'document', 'audio', 'voice'])
-def handle_messages(message):
-    global USER_ACTIVITY
-    
-    if message.is_automatic_forward:
+            if message.media_group_id:
+                if message.media_group_id in PROCESSED_MEDIA_GROUPS:
+                    print(f"⏭ Пропуск дубликата медиа-группы {message.media_group_id}")
+                    return
+                PROCESSED_MEDIA_GROUPS[message.media_group_id] = now
+                print(f"📢 Новая медиа-группа из канала: {message.media_group_id}")
+            else:
+                print(f"📢 Новый пост из канала")
+            
+            time.sleep(1)
+            send_welcome_message(DISCUSSION_GROUP_ID, reply_to_message_id=message.message_id)
+        except Exception as e:
+            print(f"⚠️ Ошибка при обработке пересланного поста: {e}")
+            traceback.print_exc()
         return
     
+    # ИГНОРИРУЕМ АВТОМАТИЧЕСКИЕ ПЕРЕСЫЛКИ В ОСТАЛЬНЫХ СЛУЧАЯХ
+    if message.is_automatic_forward:
+        print("⏭ Пропуск автоматической пересылки (не из нужной группы)")
+        return
+    
+    # ОБРАБОТКА ОБЫЧНЫХ СООБЩЕНИЙ В ГРУППЕ (АНТИФЛУД И СТОП-СЛОВА)
     if message.chat.type not in ['group', 'supergroup']:
+        print("⏭ Пропуск (не группа)")
         return
 
     user_id = message.from_user.id
@@ -203,7 +169,6 @@ def handle_messages(message):
 
     now = datetime.datetime.now().timestamp()
     USER_ACTIVITY.setdefault(user_id, [])
-    
     USER_ACTIVITY[user_id] = [(t, msg_id) for t, msg_id in USER_ACTIVITY[user_id] if now - t < TIME_WINDOW_SECONDS]
     USER_ACTIVITY[user_id].append((now, message.message_id))
 
@@ -214,13 +179,7 @@ def handle_messages(message):
             except Exception as e:
                 print(f"⚠️ Не удалось удалить сообщение {msg_id}: {e}")
         
-        apply_mute(
-            chat_id,
-            user_id,
-            username,
-            f"Флуд ({FLOOD_LIMIT}+ сообщений за {TIME_WINDOW_SECONDS} секунд)",
-            reply_to_message_id=channel_post_id
-        )
+        apply_mute(chat_id, user_id, username, f"Флуд ({FLOOD_LIMIT}+ сообщений за {TIME_WINDOW_SECONDS} секунд)", reply_to_message_id=channel_post_id)
         USER_ACTIVITY[user_id] = []
         return
 
@@ -229,27 +188,45 @@ def handle_messages(message):
         for word in STOP_WORDS:
             if word in text:
                 bot.delete_message(chat_id, message.message_id)
-                apply_mute(
-                    chat_id,
-                    user_id,
-                    username,
-                    f"Стоп-слово: {word}",
-                    reply_to_message_id=channel_post_id
-                )
+                apply_mute(chat_id, user_id, username, f"Стоп-слово: {word}", reply_to_message_id=channel_post_id)
                 break
 
-# === ЗАПУСК С WEBHOOK ДЛЯ RENDER ===
+# === МУТ ===
+def apply_mute(chat_id, user_id, username, reason, reply_to_message_id=None):
+    try:
+        mute_until = datetime.datetime.now() + datetime.timedelta(seconds=MUTE_DURATION_SECONDS)
+        permissions = ChatPermissions(
+            can_send_messages=False,
+            can_send_media_messages=False,
+            can_send_polls=False,
+            can_send_other_messages=False,
+            can_add_web_page_previews=False
+        )
+        bot.restrict_chat_member(chat_id=chat_id, user_id=user_id, permissions=permissions, until_date=int(mute_until.timestamp()))
+        bot.send_message(chat_id, f"@{username} ⚠️ {reason}\nМут на 1 час.", reply_to_message_id=reply_to_message_id)
+        print(f"🔇 Мут {username} до {mute_until}")
+    except Exception as e:
+        print(f"❌ Ошибка при выдаче мута: {e}")
+        traceback.print_exc()
+
+def find_channel_post_id(message):
+    try:
+        if message.reply_to_message:
+            if message.reply_to_message.is_automatic_forward:
+                return message.reply_to_message.message_id
+            return find_channel_post_id(message.reply_to_message)
+        return None
+    except:
+        return None
+
+# === ЗАПУСК С WEBHOOK ===
 print("🚀 Бот запущен и слушает события...")
 
 if 'RENDER' in os.environ:
-    # Webhook режим для Render
     app = Flask(__name__)
-    
-    # Устанавливаем webhook
     WEBHOOK_URL = os.getenv('RENDER_EXTERNAL_URL')
-    if not WEBHOOK_URL:
-        print("⚠️ RENDER_EXTERNAL_URL не установлен! Используйте URL вашего приложения Render.")
-    else:
+    
+    if WEBHOOK_URL:
         webhook_path = f"/{TOKEN}"
         try:
             bot.remove_webhook()
@@ -272,7 +249,7 @@ if 'RENDER' in os.environ:
     def webhook():
         try:
             json_string = request.get_data().decode('utf-8')
-            print(f"📥 Получен webhook: {json_string[:200]}...")  # Логируем первые 200 символов
+            print(f"📥 Получен webhook")
             update = telebot.types.Update.de_json(json_string)
             bot.process_new_updates([update])
             print(f"✅ Update обработан успешно")
@@ -285,7 +262,5 @@ if 'RENDER' in os.environ:
     port = int(os.environ.get('PORT', 5000))
     if __name__ == '__main__':
         app.run(host='0.0.0.0', port=port)
-
 else:
-    # Polling режим для локального запуска
     bot.infinity_polling()
