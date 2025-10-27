@@ -261,8 +261,15 @@ print("🚀 Бот запущен и слушает события...")
 # а сам бот запускаем в отдельном потоке (threading), чтобы он работал 24/7.
 
 if 'RENDER' in os.environ:
+    # ВАЖНО: Удаляем webhook перед запуском polling
+    try:
+        bot.remove_webhook()
+        print("✅ Webhook удален")
+        time.sleep(1)
+    except Exception as e:
+        print(f"⚠️ Ошибка при удалении webhook: {e}")
+    
     # 1. Запуск Polling в отдельном потоке
-    # allowed_updates='message' - бот слушает только сообщения в группе (для экономии трафика)
     polling_thread = threading.Thread(target=lambda: bot.infinity_polling(allowed_updates=['message', 'channel_post']), daemon=True)
     polling_thread.start()
 
