@@ -58,7 +58,7 @@ def get_buttons():
     keyboard.row(InlineKeyboardButton("🧾 Правила", url=RULES_LINK))
     return keyboard
 
-# === ПРИВЕТСТВИЕ ===
+# === ПРИВЕТСТВИЕ С ПОВТОРНЫМИ ПОПЫТКАМИ ===
 def send_welcome_message(chat_id, reply_to_message_id=None):
     caption = (
         "👋 Привет ты попал в комментарии под моим постом. Внизу интересные ссылки и правила поведения (пожалуйста почитай их страничка сделана вроде симпатично)🐳\n\n"
@@ -68,29 +68,55 @@ def send_welcome_message(chat_id, reply_to_message_id=None):
         "<a href='{rules}'>правилами</a> чата 🐳"
     ).format(inst=INST_LINK, yt=CHANNEL_LINK, rules=RULES_LINK)
 
-    try:
-        bot.send_animation(
-            chat_id=chat_id,
-            animation=GIF_URL,
-            caption=caption,
-            parse_mode="HTML",
-            reply_markup=get_buttons(),
-            reply_to_message_id=reply_to_message_id
-        )
-        logging.info(f"✅ Приветствие отправлено как ответ на сообщение {reply_to_message_id} в чат {chat_id}")
-    except Exception as e:
-        logging.warning(f"⚠️ Ошибка отправки GIF-приветствия: {e}. Отправка текстовой версии.")
+    max_retries = 3
+    delay = 1.5 # Начальная задержка
+
+    for attempt in range(max_retries):
         try:
-            bot.send_message(
-                chat_id, 
-                caption, 
-                parse_mode="HTML", 
+            bot.send_animation(
+                chat_id=chat_id,
+                animation=GIF_URL,
+                caption=caption,
+                parse_mode="HTML",
                 reply_markup=get_buttons(),
                 reply_to_message_id=reply_to_message_id
             )
-            logging.info(f"✅ Приветствие (текст) отправлено.")
-        except Exception as e_text:
-            logging.error(f"❌ Критическая ошибка: не удалось отправить даже текстовое приветствие: {e_text}", exc_info=True)
+            logging.info(f"✅ Приветствие отправлено (попытка {attempt+1}) как ответ на сообщение {reply_to_message_id} в чат {chat_id}")
+            return # Успех
+        
+        except telebot.apihelper.ApiTelegramException as e:
+            error_message = str(e)
+            
+            # --- Обработка ошибки "message to be replied not found" ---
+            if attempt < max_retries - 1 and "Bad Request: message to be replied not found" in error_message:
+                logging.warning(f"⚠️ Ошибка 400: Сообщение для ответа еще не найдено (ID: {reply_to_message_id}). Повтор через {delay} сек. ({attempt+1}/{max_retries})")
+                time.sleep(delay)
+                delay *= 1.5 # Увеличение задержки
+                continue
+            
+            # --- Fallback на текстовое сообщение для невосстановимых ошибок ---
+            logging.warning(f"⚠️ Ошибка отправки GIF-приветствия (попытка {attempt+1}): {e}. Отправка текстовой версии.")
+            
+            try:
+                bot.send_message(
+                    chat_id, 
+                    caption, 
+                    parse_mode="HTML", 
+                    reply_markup=get_buttons(),
+                    reply_to_message_id=reply_to_message_id
+                )
+                logging.info(f"✅ Приветствие (текст) отправлено.")
+                return # Успех (текстовый запасной вариант)
+            except Exception as e_text:
+                logging.error(f"❌ Критическая ошибка: не удалось отправить даже текстовое приветствие: {e_text}", exc_info=True)
+                return # Сдаемся
+
+        except Exception as e:
+            # Общая ошибка
+            logging.error(f"❌ Неизвестная ошибка при отправке приветствия: {e}", exc_info=True)
+            return
+
+    logging.error(f"❌ Не удалось отправить приветствие после {max_retries} попыток.")
 
 
 # === КОМАНДА /start ===
@@ -117,28 +143,24 @@ def handle_channel_post(message):
     try:
         now = time.time()
         
-        # 1. Очищаем старые медиа-группы (до блокировки, чтобы минимизировать время блокировки)
+        # 1. Очищаем старые медиа-группы
         PROCESSED_MEDIA_GROUPS = {k: v for k, v in PROCESSED_MEDIA_GROUPS.items() if now - v < MEDIA_GROUP_TIMEOUT}
         
-        should_send_welcome = True
-
         # 2. Проверяем, является ли это частью медиа-группы, и управляем дублированием
         if message.media_group_id:
             # Используем блокировку для обеспечения атомарной проверки
             with MEDIA_GROUP_LOCK:
                 if message.media_group_id in PROCESSED_MEDIA_GROUPS:
                     logging.info(f"⏭ Пропуск дубликата медиа-группы {message.media_group_id} (ID поста: {message.message_id}).")
-                    # КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: немедленно выходим для дубликатов
-                    return 
+                    return # Немедленно выходим для дубликатов
                 else:
-                    # Помечаем медиа-группу как обработанную, чтобы следующие сообщения были пропущены
+                    # Помечаем медиа-группу как обработанную
                     PROCESSED_MEDIA_GROUPS[message.media_group_id] = now
                     logging.info(f"📢 Новая медиа-группа из канала: {message.media_group_id} (ID поста: {message.message_id}).")
         else:
-            logging.info(f"📢 Новый одиночный пост в канале (ID: {message.message_id}).")
+            logging.info(f"📢 Новый одиночный пост в канале (ID: {message.message_id}). Тип: {message.content_type}")
         
-        # 3. Отправляем приветствие, только если оно не было пропущено (т.е. это не дубликат)
-        time.sleep(1) # Небольшая задержка, чтобы дать время треду открыться
+        # 3. Отправляем приветствие. Логика повторных попыток теперь находится внутри функции.
         send_welcome_message(DISCUSSION_GROUP_ID, reply_to_message_id=message.message_id)
             
     except Exception as e:
