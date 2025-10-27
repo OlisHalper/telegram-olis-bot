@@ -8,6 +8,7 @@ import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ChatPermissions
 
 # === НАСТРОЙКИ ЛОГИРОВАНИЯ ===
+# Установим уровень DEBUG, чтобы видеть максимальное количество информации
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # === КОНФИГУРАЦИЯ БОТА ===
@@ -33,13 +34,48 @@ RULES_LINK = "https://olishalper.github.io/olis-chat-rules/"
 # === МОДЕРАЦИЯ ===
 
 STOP_WORDS = [
-    "терроризм", "заработай", "быстрый доход", "крипта", "слив", 
-    "продаю", "куплю", "геноцид", "фашизм", "нацизм", "экстремизм", 
-    "террор", "путин", "русня", "хохлы", "хохол", "пидор", "зеля", 
-    "зеленский", "педофилия", "педофил", "зоофилия", "нсфл", 
-    "детское порно", "порнография с животными", "пидорасы", 
-    "педик", "сдохни", "лесбуха", "лесбухи", "лезбуха", 
-    "лезбухи", "национализм", "ксенофобия",
+    "терроризм",
+    "заработай",
+    "быстрый доход",
+    "крипта",
+    "слив",
+    "продаю",
+    "куплю",
+
+    # Войны / Экстремизм
+    "геноцид",
+    "фашизм",
+    "нацизм",
+    "экстремизм",
+    "террор",
+    "путин",
+    "русня",
+    "хохлы",
+    "хохол",
+    "пидор",
+    "зеля",
+    "зеленский",
+
+    # Запрещенный контент (Педофилия, Зоофилия)
+    "педофилия",
+    "педофил",
+    "зоофилия",
+    "нсфл", # NSFW/NSFL в русском сленге
+    "детское порно",
+    "порнография с животными",
+
+    # Дискриминация (Расизм, Сексизм, Гомофобия)
+    "пидорасы",
+    "педик",
+    "сдохни",
+    "лесбуха",
+    "лесбухи",
+    "лезбуха",
+    "лезбухи",
+    "национализм",
+    "ксенофобия",
+
+    # Добавьте сюда другие слова и фразы (например, нецензурная лексика, экстремизм и т.д.)
 ]
 
 MUTE_DURATION_SECONDS = 3600 # 1 час
@@ -218,16 +254,26 @@ def find_channel_post_id(message):
 def handle_messages(message):
     global USER_ACTIVITY
     
-    # Игнорируем автоматически пересланные посты из канала
-    if getattr(message, 'is_automatic_forward', False):
-        return
-    
-    # Обрабатываем только в группе комментариев
-    if message.chat.id != DISCUSSION_GROUP_ID:
+    # 0. Проверяем, что это не сервисное сообщение (например, пользователь присоединился)
+    if message.content_type not in ['text', 'sticker', 'photo', 'video', 'document', 'audio', 'voice', 'animation']:
         return
 
+    # 1. Обрабатываем только в группе комментариев
+    if message.chat.id != DISCUSSION_GROUP_ID:
+        return
+        
     user_id = message.from_user.id
-    username = message.from_user.username or message.from_user.first_name
+    # Используем get_full_name() для более надежного имени, если нет username
+    username = message.from_user.username or message.from_user.full_name 
+
+    # 2. КЛЮЧЕВОЙ ЛОГ: Убеждаемся, что бот получил сообщение
+    logging.info(f"👀 Получено сообщение в группе комментариев. От: @{username} ({user_id}). Тип: {message.content_type}")
+    
+    # 3. Игнорируем автоматически пересланные посты из канала
+    if getattr(message, 'is_automatic_forward', False):
+        logging.info("⏭ Игнорируется автоматическая пересылка из канала.")
+        return
+
     chat_id = message.chat.id
     
     # Ищем исходный пост канала для ответа-уведомления
@@ -304,7 +350,7 @@ def run_polling():
         # Запуск Polling
         bot.infinity_polling(allowed_updates=['message', 'channel_post'])
     except Exception as e:
-        logging.critical(f"❌ Критическая ошибка Polling: {e}", exc_info=True)
+        logging.critical(f"❌ Критическая ошибка Polling. Возможно, конфликт 409: {e}", exc_info=True)
 
 
 if 'RENDER_EXTERNAL_HOSTNAME' in os.environ:
