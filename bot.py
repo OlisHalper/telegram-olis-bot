@@ -3,28 +3,37 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ChatPermis
 import os
 import time
 import datetime
-
-# === ДОБАВЛЕНО ДЛЯ РЕНДЕРА: Импорт Flask и threading ===
-from flask import Flask, request
+import logging
+from telebot import apihelper 
+from flask import Flask
 import threading
-# --- ------------------------------------------------- ---
 
-# === НАСТРОЙКИ ===
+# === НАСТРОЙКИ ЛОГИРОВАНИЯ ===
+# Настраиваем логирование, чтобы видеть, что происходит в консоли
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# === КОНФИГУРАЦИЯ БОТА ===
 TOKEN = os.getenv("BOT_TOKEN")
+if not TOKEN:
+    logging.error("❌ BOT_TOKEN не найден. Установите его в переменные окружения!")
+    # Выходим, если токен не найден
+    # exit(1) 
+
+# Инициализация бота
 bot = telebot.TeleBot(TOKEN)
 
-# === ОСНОВНЫЕ ССЫЛКИ ===
+# === ОСНОВНЫЕ ССЫЛКИ И ID ===
 CHANNEL_USERNAME = "@whoisolis"
-CHANNEL_ID = -1003083438241  # ID канала
-DISCUSSION_GROUP_ID = -1003210182852  # ID группы комментариев
+# ВАШИ АКТУАЛЬНЫЕ ID
+CHANNEL_ID = -1003083438241 
+DISCUSSION_GROUP_ID = -1003210182852 
 
-GIF_URL = "https://media.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3bThjMXZkMTExb2IzZW9zdm0wNjRieG1haXVrcGVicHBsNzJqNXZ0eSZlcD12MV9naWZzX3NlYXJjaCZjdD1n/dT6f2FnfY24C1L1TIR/giphy.gif"
+GIF_URL = "https://media.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3bThjMXZkMTExb2IzZW9zdm0wNjRieG1haXVrcGVicHBsNzJqNXZ0eSZlcF92MV9naWZzX3NlYXJjaCZjdD1n/dT6f2FnfY24C1L1TIR/giphy.gif"
 CHANNEL_LINK = "https://www.youtube.com/@thisolis"
 INST_LINK = "https://www.instagram.com/whoisolis/"
 RULES_LINK = "https://olishalper.github.io/olis-chat-rules/"
 
 # === МОДЕРАЦИЯ ===
-
 STOP_WORDS = [
     "терроризм",
     "заработай",
@@ -70,10 +79,15 @@ STOP_WORDS = [
     # Добавьте сюда другие слова и фразы (например, нецензурная лексика, экстремизм и т.д.)
 ]
 
-MUTE_DURATION_SECONDS = 3600  # 1 час
+MUTE_DURATION_SECONDS = 3600 # 1 час
 FLOOD_LIMIT = 10
 TIME_WINDOW_SECONDS = 10
-USER_ACTIVITY = {}  # {user_id: [(timestamp, message_id), ...]}
+USER_ACTIVITY = {} # {user_id: [(timestamp, message_id), ...]}
+
+# === ОТСЛЕЖИВАНИЕ МЕДИА-ГРУПП для устранения дублирования ===
+# Словарь для отслеживания уже обработанных медиа-групп (альбомов)
+PROCESSED_MEDIA_GROUPS = {} # {media_group_id: timestamp}
+MEDIA_GROUP_TIMEOUT = 10 # Время, в течение которого сообщения считаются частью группы (в секундах)
 
 # === КНОПКИ ===
 def get_buttons():
@@ -81,8 +95,9 @@ def get_buttons():
     keyboard.row(InlineKeyboardButton("🧾 Правила", url=RULES_LINK))
     return keyboard
 
-# === ПРИВЕТСТВИЕ ===
+# === ФУНКЦИЯ ОТПРАВКИ ПРИВЕТСТВИЯ С ПОВТОРНЫМИ ПОПЫТКАМИ ===
 def send_welcome_message(chat_id, reply_to_message_id=None):
+    """Отправляет приветствие, пытаясь повторно, чтобы избежать ошибки 'message to be replied not found'."""
     caption = (
         "👋 Привет ты попал в комментарии под моим постом. Внизу интересные ссылки и правила поведения (пожалуйста почитай их страничка сделана вроде симпатично)🐳\n\n"
         "📸 Мой <a href='{inst}'>инстаграм</a>\n"
@@ -91,43 +106,106 @@ def send_welcome_message(chat_id, reply_to_message_id=None):
         "<a href='{rules}'>правилами</a> чата 🐳"
     ).format(inst=INST_LINK, yt=CHANNEL_LINK, rules=RULES_LINK)
 
-    try:
-        bot.send_animation(
-            chat_id=chat_id,
-            animation=GIF_URL,
-            caption=caption,
-            parse_mode="HTML",
-            reply_markup=get_buttons(),
-            reply_to_message_id=reply_to_message_id
-        )
-        print(f"✅ Приветствие отправлено как ответ на сообщение {reply_to_message_id} в чат {chat_id}")
-    except Exception as e:
-        print(f"⚠️ Ошибка отправки приветствия: {e}")
+    max_retries = 3
+    delay = 1.0 # Начальная задержка
+
+    for attempt in range(max_retries):
+        try:
+            bot.send_animation(
+                chat_id=chat_id,
+                animation=GIF_URL,
+                caption=caption,
+                parse_mode="HTML",
+                reply_markup=get_buttons(),
+                reply_to_message_id=reply_to_message_id
+            )
+            logging.info(f"✅ Приветствие отправлено (попытка {attempt+1}) в ответ на ID: {reply_to_message_id}")
+            return # Успех
+        
+        except apihelper.ApiTelegramException as e:
+            error_message = str(e)
+            
+            # Обработка частой ошибки (сообщение еще не доступно в Telegram API)
+            if attempt < max_retries - 1 and "Bad Request: message to be replied not found" in error_message:
+                logging.warning(f"⚠️ Ошибка 400: Сообщение для ответа {reply_to_message_id} не найдено. Повтор через {delay:.1f} сек. ({attempt+1}/{max_retries})")
+                time.sleep(delay)
+                delay *= 1.5 
+                continue
+            
+            # В случае других ошибок API, пробуем отправить просто текст
+            logging.warning(f"⚠️ Ошибка отправки GIF-приветствия (попытка {attempt+1}): {e}. Отправка текстовой версии.")
+            
+            try:
+                bot.send_message(
+                    chat_id, 
+                    caption, 
+                    parse_mode="HTML", 
+                    reply_markup=get_buttons(),
+                    reply_to_message_id=reply_to_message_id
+                )
+                logging.info(f"✅ Приветствие (текст) отправлено.")
+                return 
+            except Exception as e_text:
+                logging.error(f"❌ Критическая ошибка: не удалось отправить даже текстовое приветствие: {e_text}", exc_info=True)
+                return 
+
+        except Exception as e:
+            logging.error(f"❌ Неизвестная ошибка при отправке приветствия: {e}", exc_info=True)
+            return
+
+    logging.error(f"❌ Не удалось отправить приветствие после {max_retries} попыток.")
+
 
 # === КОМАНДА /start ===
 @bot.message_handler(commands=['start'])
 def send_rules(message):
-    send_welcome_message(message.chat.id)
+    reply_id = getattr(message.reply_to_message, 'message_id', None)
+    send_welcome_message(message.chat.id, reply_to_message_id=reply_id)
 
-# === ОБРАБОТКА АВТОМАТИЧЕСКИ ПЕРЕСЛАННЫХ ПОСТОВ В ГРУППУ КОММЕНТАРИЕВ ===
-@bot.message_handler(func=lambda m: m.chat.id == DISCUSSION_GROUP_ID and m.is_automatic_forward, content_types=['text', 'photo', 'video', 'audio', 'voice', 'video_note', 'document', 'sticker', 'animation', 'poll'])
+
+# === ОБРАБОТКА АВТОМАТИЧЕСКИ ПЕРЕСЛАННЫХ ПОСТОВ (ТРИГГЕР ПРИВЕТСТВИЯ) ===
+@bot.message_handler(
+    func=lambda m: m.chat.id == DISCUSSION_GROUP_ID and m.is_automatic_forward, 
+    content_types=['text', 'photo', 'video', 'audio', 'voice', 'video_note', 'document', 'sticker', 'animation', 'poll']
+)
 def handle_forwarded_channel_post(message):
+    global PROCESSED_MEDIA_GROUPS
+    
+    logging.info(f"👀 [ТРИГГЕР] Получен автоматический форвард. ID: {message.message_id}. Media Group ID: {message.media_group_id}")
+    
     try:
-        print(f"📢 Обнаружен новый пост из канала в группе комментариев")
-        print(f"    Message ID в группе: {message.message_id}")
-        print(f"    Тип: {message.content_type}")
-        
-        time.sleep(1)
+        # --- БЛОК АНТИ-ДУБЛИКАТ ДЛЯ МЕДИА-ГРУПП ---
+        if message.media_group_id:
+            now = time.time()
+            
+            # 1. Очистка старых записей
+            PROCESSED_MEDIA_GROUPS = {k: v for k, v in PROCESSED_MEDIA_GROUPS.items() if now - v < MEDIA_GROUP_TIMEOUT}
+            
+            # 2. Проверка, была ли эта медиа-группа уже обработана
+            if message.media_group_id in PROCESSED_MEDIA_GROUPS:
+                logging.info(f"⏭ [ТРИГГЕР] Пропуск дубликата медиа-группы {message.media_group_id}. Приветствие уже отправлено.")
+                return # Выходим, чтобы избежать дублирования
+            
+            # 3. Пометка группы как обработанной
+            PROCESSED_MEDIA_GROUPS[message.media_group_id] = now
+            logging.info(f"📢 [ТРИГГЕР] Новый пост (медиа-группа {message.media_group_id}). Запуск приветствия...")
+            
+        else:
+            # Одиночный пост (текст, одно фото, одно видео и т.д.)
+            logging.info(f"📢 [ТРИГГЕР] Новый одиночный пост. Запуск приветствия...")
+
+        # Отправляем приветствие, отвечая на сам пересланный пост из канала
         send_welcome_message(DISCUSSION_GROUP_ID, reply_to_message_id=message.message_id)
+        
     except Exception as e:
-        print(f"⚠️ Ошибка при обработке пересланного поста: {e}")
+        logging.error(f"⚠️ Ошибка при обработке пересланного поста: {e}", exc_info=True)
+
 
 # === МУТ ===
 def apply_mute(chat_id, user_id, username, reason, reply_to_message_id=None):
     try:
         mute_until = datetime.datetime.now() + datetime.timedelta(seconds=MUTE_DURATION_SECONDS)
         
-        # Разрешаем все, кроме отправки сообщений и медиа
         permissions = ChatPermissions(
             can_send_messages=False,
             can_send_media_messages=False,
@@ -143,23 +221,22 @@ def apply_mute(chat_id, user_id, username, reason, reply_to_message_id=None):
             until_date=int(mute_until.timestamp())
         )
         
-        # Отправляем уведомление как ответ на пост канала (если есть)
         bot.send_message(
-            chat_id,
+            chat_id, 
             f"@{username} ⚠️ {reason}\nМут на 1 час.",
             reply_to_message_id=reply_to_message_id
         )
-        print(f"🔇 Мут {username} до {mute_until}")
+        logging.warning(f"🔇 Мут {username} до {mute_until}. Причина: {reason}")
     except Exception as e:
-        print(f"❌ Ошибка при выдаче мута: {e}")
+        logging.error(f"❌ Ошибка при выдаче мута. Проверьте права бота: {e}", exc_info=True)
 
 # === ФУНКЦИЯ ДЛЯ ПОИСКА ИСХОДНОГО ПОСТА КАНАЛА ===
 def find_channel_post_id(message):
-    """Находит ID автоматически пересланного поста канала в треде"""
+    """Находит ID автоматически пересланного поста канала, на который нужно ответить в треде"""
     try:
-        # Если это ответ на сообщение, проверяем родительское сообщение
         if message.reply_to_message:
-            if message.reply_to_message.is_automatic_forward:
+            # Проверяем, является ли родительское сообщение автоматическим форвардом
+            if getattr(message.reply_to_message, 'is_automatic_forward', False):
                 return message.reply_to_message.message_id
             # Рекурсивно проверяем цепочку ответов
             return find_channel_post_id(message.reply_to_message)
@@ -167,26 +244,29 @@ def find_channel_post_id(message):
     except:
         return None
 
-# === АНТИФЛУД И СТОП-СЛОВА ===
-@bot.message_handler(content_types=['text', 'sticker', 'photo', 'video', 'document', 'audio', 'voice'])
+# === АНТИФЛУД И СТОП-СЛОВА (МОДЕРАЦИЯ КОММЕНТАРИЕВ) ===
+@bot.message_handler(content_types=['text', 'sticker', 'photo', 'video', 'document', 'audio', 'voice', 'animation'])
 def handle_messages(message):
     global USER_ACTIVITY
     
-    # Игнорируем автоматически пересланные посты из канала
-    if message.is_automatic_forward:
+    # 1. Игнорируем автоматически пересланные посты
+    if getattr(message, 'is_automatic_forward', False):
         return
     
-    if message.chat.type not in ['group', 'supergroup']:
+    # 2. Обрабатываем только в целевой группе комментариев
+    if message.chat.id != DISCUSSION_GROUP_ID:
         return
-
+        
     user_id = message.from_user.id
     username = message.from_user.username or message.from_user.first_name
     chat_id = message.chat.id
     
-    # Ищем исходный пост канала для ответа
+    logging.info(f"👀 [МОДЕРАЦИЯ] Получен комментарий от @{username}. Тип: {message.content_type}")
+    
+    # Ищем исходный пост канала для ответа-уведомления о муте
     channel_post_id = find_channel_post_id(message)
 
-    # антифлуд - теперь сохраняем также message_id
+    # --- Антифлуд ---
     now = datetime.datetime.now().timestamp()
     USER_ACTIVITY.setdefault(user_id, [])
     
@@ -195,69 +275,89 @@ def handle_messages(message):
     USER_ACTIVITY[user_id].append((now, message.message_id))
 
     if len(USER_ACTIVITY[user_id]) >= FLOOD_LIMIT:
+        logging.warning(f"🚨 [МОДЕРАЦИЯ] Обнаружен флуд от @{username}. Выдача мута.")
+        
         # Удаляем ВСЕ сообщения из флуда
         for timestamp, msg_id in USER_ACTIVITY[user_id]:
             try:
                 bot.delete_message(chat_id, msg_id)
             except Exception as e:
-                print(f"⚠️ Не удалось удалить сообщение {msg_id}: {e}")
-        
+                logging.error(f"⚠️ Не удалось удалить сообщение {msg_id} во время флуда: {e}")
+            
         apply_mute(
-            chat_id,
-            user_id,
-            username,
+            chat_id, 
+            user_id, 
+            username, 
             f"Флуд ({FLOOD_LIMIT}+ сообщений за {TIME_WINDOW_SECONDS} секунд)",
             reply_to_message_id=channel_post_id
         )
-        USER_ACTIVITY[user_id] = []
+        USER_ACTIVITY[user_id] = [] # Очищаем активность после мута
         return
 
-    # стоп-слова
+    # --- Стоп-слова ---
     if message.text:
         text = message.text.lower()
         for word in STOP_WORDS:
+            # Используем поиск слова в тексте
             if word in text:
-                bot.delete_message(chat_id, message.message_id)
+                logging.warning(f"🚨 [МОДЕРАЦИЯ] Обнаружено стоп-слово '{word}' от @{username}. Выдача мута.")
+                
+                try:
+                    bot.delete_message(chat_id, message.message_id)
+                except Exception as e:
+                    logging.error(f"⚠️ Не удалось удалить сообщение со стоп-словом: {e}")
+                
                 apply_mute(
-                    chat_id,
-                    user_id,
-                    username,
+                    chat_id, 
+                    user_id, 
+                    username, 
                     f"Стоп-слово: {word}",
                     reply_to_message_id=channel_post_id
                 )
-                break
+                return
+    
+    logging.info(f"✅ [МОДЕРАЦИЯ] Комментарий от @{username} прошел проверку.")
+            
+# === ЗАПУСК (АДАПТАЦИЯ ДЛЯ GUNICORN/FLASK) ===
 
-# === ЗАПУСК ===
-print("🚀 Бот запущен и слушает события...")
+# Инициализация Flask приложения (необходимо для Gunicorn)
+app = Flask(__name__)
 
-# --- Новый запуск с Flask для совместимости с бесплатным Web Service Render ---
-# Используем Flask для прослушивания порта, чтобы Render не выдавал ошибку,
-# а сам бот запускаем в отдельном потоке (threading), чтобы он работал 24/7.
+# Функция, которая будет запускать Polling в фоновом потоке
+def run_polling():
+    # Эта функция выполняется в фоновом потоке
+    logging.info("🧹 Попытка удаления старого Webhook...")
+    try:
+        bot.remove_webhook() 
+        logging.info("✅ Webhook удален успешно")
+        time.sleep(1)
+    except Exception as e:
+        logging.warning(f"⚠️ Ошибка при удалении webhook (возможно, его не было): {e}")
 
-if 'RENDER' in os.environ:
-    # 1. Запуск Polling в отдельном потоке
-    # allowed_updates='message' - бот слушает только сообщения в группе (для экономии трафика)
-    polling_thread = threading.Thread(target=lambda: bot.infinity_polling(allowed_updates=['message']), daemon=True)
-    polling_thread.start()
+    logging.info("🚀 [КРИТИЧЕСКИЙ ЛОГ] Бот готов к запуску Infinity Polling...")
+    try:
+        # Запуск Polling. Указываем все типы обновлений для надежности.
+        bot.infinity_polling(allowed_updates=['message', 'channel_post', 'my_chat_member', 'chat_member'])
+    except Exception as e:
+        logging.critical(f"❌ Критическая ошибка Polling: {e}", exc_info=True)
 
-    # 2. Создание заглушки Flask для прослушивания порта 
-    app = Flask(__name__)
 
-    @app.route('/')
-    def index():
-        return 'Telegram bot running (polling mode)'
+# Маршруты Flask (необходимы для health check хостинга)
+@app.route('/')
+def index():
+    return 'Telegram bot running (polling mode)', 200
 
-    @app.route('/health')
-    def health():
-        return 'OK'
+@app.route('/health')
+def health():
+    return 'OK', 200
 
-    port = int(os.environ.get('PORT', 5000))
-    # Flask запускается в фоновом режиме, чтобы бот мог работать
-    if __name__ == '__main__':
-        app.run(host='0.0.0.0', port=port)
-
+# Запуск бота в отдельном потоке
+if __name__ == '__main__':
+    # При локальном запуске (python bot.py)
+    run_polling()
 else:
-    # Обычный запуск на локальном ПК
-    bot.infinity_polling()
-
-# --- ------------------------------------------------------------------- ---
+    # При запуске через Gunicorn (gunicorn bot:app)
+    # Gunicorn импортирует 'app', а мы запускаем Polling в фоновом потоке.
+    logging.info("☁️ Запуск через Gunicorn. Polling будет запущен в отдельном потоке.")
+    polling_thread = threading.Thread(target=run_polling, daemon=True)
+    polling_thread.start()
