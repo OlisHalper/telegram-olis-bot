@@ -5,7 +5,7 @@ import time
 import datetime
 import logging
 from telebot import apihelper 
-from flask import Flask
+from flask import Flask, request
 import threading
 
 # === НАЛАШТУВАННЯ ЛОГУВАННЯ ===
@@ -503,46 +503,43 @@ def handle_messages(message):
     
     logging.info(f"✅ [МОДЕРАЦІЯ] Коментар від @{username} пройшов перевірку.")
             
-# === ЗАПУСК (АДАПТАЦІЯ ДЛЯ GUNICORN/FLASK) ===
+# === ЗАПУСК ЧЕРЕЗ ВЕБХУКИ (ІДЕАЛЬНО ДЛЯ RENDER ТА GUNICORN) ===
 
-# Ініціалізація Flask додатка (необхідно для Gunicorn)
 app = Flask(__name__)
 
-# Функція, яка запускатиме Polling у фоновому потоці
-def run_polling():
-    # Ця функція виконується у фоновому потоці
-    logging.info("🧹 Спроба видалення старого Webhook...")
-    try:
-        bot.remove_webhook() 
-        logging.info("✅ Webhook видалено успішно")
-        time.sleep(1)
-    except Exception as e:
-        logging.warning(f"⚠️ Помилка при видаленні webhook (можливо, його не було): {e}")
+# Render автоматически передает URL твоего приложения в переменную RENDER_EXTERNAL_URL
+WEBHOOK_HOST = os.getenv("RENDER_EXTERNAL_URL", "https://telegram-olis-bot.onrender.com")
+WEBHOOK_URL = f"{WEBHOOK_HOST}/{TOKEN}"
 
-    logging.info("🚀 [КРИТИЧНИЙ ЛОГ] Бот готовий до запуску Infinity Polling...")
-    try:
-        # Запуск Polling. Вказуємо всі типы оновлень для надійності.
-        bot.infinity_polling(allowed_updates=['message', 'channel_post', 'my_chat_member', 'chat_member'])
-    except Exception as e:
-        logging.critical(f"❌ Критична помилка Polling: {e}", exc_info=True)
+# Настройка вебхука при старте сервера
+try:
+    logging.info("扫 Видаляємо старі сесії пуллінгу та встановлюємо новий Webhook...")
+    bot.remove_webhook()
+    time.sleep(1)  # Даем Telegram секунду на закрытие старых соединений
+    bot.set_webhook(url=WEBHOOK_URL)
+    logging.info(f"✅ Webhook успішно встановлено на адресу: {WEBHOOK_URL}")
+except Exception as e:
+    logging.error(f"❌ Помилка при встановленні Webhook: {e}")
 
+# Главный маршрут, куда Telegram будет присылать нажатия на кнопки и сообщения
+@app.route('/' + TOKEN, methods=['POST'])
+def webhook():
+    if request.headers.get('content-type') == 'application/json':
+        json_string = request.get_data().decode('utf-8')
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return '', 200
+    else:
+        return 'Forbidden', 403
 
-# Маршрути Flask (необхідні для health check хостингу)
+# Маршруты для проверки жизнедеятельности (Health Check)
 @app.route('/')
-def index():
-    return 'Telegram bot running (polling mode)', 200
-
 @app.route('/health')
 def health():
-    return 'OK', 200
+    return 'Bot is running via Webhooks!', 200
 
-# Запуск бота в окремому потоці
+# Локальный запуск на ПК (если запустишь файл дома — он автоматически включит пуллинг)
 if __name__ == '__main__':
-    # При локальному запуску (python bot.py)
-    run_polling()
-else:
-    # При запуску через Gunicorn (gunicorn bot:app)
-    # Gunicorn імпортує 'app', а ми запускаємо Polling у фоновому потоці.
-    logging.info("☁️ Запуск через Gunicorn. Polling буде запущено в окремому потоці.")
-    polling_thread = threading.Thread(target=run_polling, daemon=True)
-    polling_thread.start()
+    logging.info("🤖 Локальний запуск: вимикаємо вебхук та запускаємо стандартний Polling...")
+    bot.remove_webhook()
+    bot.infinity_polling(allowed_updates=['message', 'channel_post', 'my_chat_member', 'chat_member', 'callback_query'])
