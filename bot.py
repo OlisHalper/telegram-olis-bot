@@ -20,7 +20,7 @@ if not TOKEN:
     # exit(1) 
 
 # Ініціалізація бота
-bot = telebot.TeleBot(TOKEN)
+bot = telebot.TeleBot(TOKEN, threaded=False)
 
 # === ОСНОВНІ ПОСИЛАННЯ ТА ID ===
 CHANNEL_USERNAME = "@whoisolis"
@@ -507,39 +507,41 @@ def handle_messages(message):
 
 app = Flask(__name__)
 
-# Render автоматически передает URL твоего приложения в переменную RENDER_EXTERNAL_URL
 WEBHOOK_HOST = os.getenv("RENDER_EXTERNAL_URL", "https://telegram-olis-bot.onrender.com")
 WEBHOOK_URL = f"{WEBHOOK_HOST}/{TOKEN}"
 
-# Настройка вебхука при старте сервера
+# Список обновлений, которые бот должен слушать (для модерации чатов и предложки)
+ALLOWED_UPDATES = ['message', 'channel_post', 'my_chat_member', 'chat_member', 'callback_query']
+
 try:
-    logging.info("扫 Видаляємо старі сесії пуллінгу та встановлюємо новий Webhook...")
+    logging.info("🧹 Видаляємо старі сесії пуллінгу та встановлюємо новий Webhook...")
     bot.remove_webhook()
-    time.sleep(1)  # Даем Telegram секунду на закрытие старых соединений
-    bot.set_webhook(url=WEBHOOK_URL)
+    time.sleep(1)
+    
+    # Передаем список ALLOWED_UPDATES, чтобы Telegram присылал ВСЕ события
+    bot.set_webhook(url=WEBHOOK_URL, allowed_updates=ALLOWED_UPDATES)
     logging.info(f"✅ Webhook успішно встановлено на адресу: {WEBHOOK_URL}")
 except Exception as e:
     logging.error(f"❌ Помилка при встановленні Webhook: {e}")
 
-# Главный маршрут, куда Telegram будет присылать нажатия на кнопки и сообщения
 @app.route('/' + TOKEN, methods=['POST'])
 def webhook():
     if request.headers.get('content-type') == 'application/json':
         json_string = request.get_data().decode('utf-8')
         update = telebot.types.Update.de_json(json_string)
+        
+        # Теперь это выполнится строго до того, как Flask отдаст 200 OK
         bot.process_new_updates([update])
         return '', 200
     else:
         return 'Forbidden', 403
 
-# Маршруты для проверки жизнедеятельности (Health Check)
 @app.route('/')
 @app.route('/health')
 def health():
     return 'Bot is running via Webhooks!', 200
 
-# Локальный запуск на ПК (если запустишь файл дома — он автоматически включит пуллинг)
 if __name__ == '__main__':
     logging.info("🤖 Локальний запуск: вимикаємо вебхук та запускаємо стандартний Polling...")
     bot.remove_webhook()
-    bot.infinity_polling(allowed_updates=['message', 'channel_post', 'my_chat_member', 'chat_member', 'callback_query'])
+    bot.infinity_polling(allowed_updates=ALLOWED_UPDATES)
