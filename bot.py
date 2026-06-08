@@ -231,8 +231,8 @@ def send_rules(message):
             reply_markup=keyboard
         )
     else:
-    reply_id = getattr(message.reply_to_message, 'message_id', None)
-    send_welcome_message(message.chat.id, reply_to_message_id=reply_id)
+        reply_id = getattr(message.reply_to_message, 'message_id', None)
+        send_welcome_message(message.chat.id, reply_to_message_id=reply_id)
 
 
 # === БЛОК ОБРОБКИ ПРЕДЛОЖКИ (ІНЛАЙН-КНОПКА, ФІЛЬТРАЦІЯ ТА АНТИСПАМ) ===
