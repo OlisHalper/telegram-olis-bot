@@ -27,6 +27,15 @@ CHANNEL_USERNAME = "@whoisolis"
 # ВАШІ АКТУАЛЬНІ ID
 CHANNEL_ID = -1003083438241 
 DISCUSSION_GROUP_ID = -1003210182852 
+# 1. Твой личный Telegram ID (куда будут приходить идеи)
+ADMIN_CHAT_ID = -1003994825567 #идеи чат id
+
+# 2. Ссылка на GIF-благодарность за идею
+THANK_YOU_GIF_URL = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExY2VhZXI0eXE5ZTNncHFpZDFwaXJkbXYwZzRxcWo1YTY4eXd3cW14OSZlcD12MV9naWZzX3RyZW5kaW5nJmN0PWc/MDJ9IbxxvDUQM/giphy.gif"
+
+# 3. Списки для защиты от дубликатов (остаются в памяти пока бот запущен)
+PROCESSED_TEXT_IDEAS = set()
+PROCESSED_FILE_IDEAS = set()
 
 GIF_URL = "https://media3.giphy.com/media/v1.Y2lkPTc5MGI3NjExY3Q0ZGl1anh6Z3NuOWR2azF5OTlsc2w3ajBuN2ZobWgybGR2c2VybCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/QgCdJJ8yTiVpcSNNQI/giphy.gif"
 CHANNEL_LINK = "https://www.youtube.com/@thisolis"
@@ -206,8 +215,137 @@ def send_welcome_message(chat_id, reply_to_message_id=None):
 # === КОМАНДА /start ===
 @bot.message_handler(commands=['start'])
 def send_rules(message):
+    if message.chat.type == 'private':
+        # Если пользователь пишет в ЛС боту — показываем меню предложки
+        keyboard = InlineKeyboardMarkup()
+        keyboard.row(InlineKeyboardButton("💡 Надіслати ідею", callback_data="btn_submit_idea"))
+        keyboard.row(InlineKeyboardButton("🧾 Rules / Правила чату", url=RULES_LINK))
+        
+        bot.send_message(
+            message.chat.id,
+            f"👋 **Привіт, {message.from_user.first_name}!**\n\n"
+            f"У цьому боті ти можеш поділитися своєю цікавою ідеєю чи пропозицією для майбутніх відео. "
+            f"Всі пропозиції розглядаються особисто автором!\n\n"
+            f"Натискай на кнопку нижче, щоб розпочати 👇",
+            parse_mode="Markdown",
+            reply_markup=keyboard
+        )
+    else:
     reply_id = getattr(message.reply_to_message, 'message_id', None)
     send_welcome_message(message.chat.id, reply_to_message_id=reply_id)
+
+
+# === БЛОК ОБРОБКИ ПРЕДЛОЖКИ (ІНЛАЙН-КНОПКА, ФІЛЬТРАЦІЯ ТА АНТИСПАМ) ===
+@bot.callback_query_handler(func=lambda call: call.data == "btn_submit_idea")
+def callback_idea(call):
+    msg = bot.send_message(
+        call.message.chat.id,
+        "📝 **Чекаю на твою ідею!**\n\n"
+        "Надішли її наступним повідомленням. Будь ласка, дотримуйся правил:\n"
+        "✅ Можна надіслати **звичайний текст** або **PDF-файл**.\n"
+        "❌ Заборонено надсилати: посилання, фото, відео, аудіо, стікери, гіфки та архіви.",
+        parse_mode="Markdown"
+    )
+    bot.register_next_step_handler(msg, save_suggestion)
+    bot.answer_callback_query(call.id)
+
+def save_suggestion(message):
+    # Скасування, якщо ввели іншу команду
+    if message.text and message.text.startswith('/'):
+        bot.send_message(message.chat.id, "❌ Відправку ідеї скасовано.")
+        return
+
+    is_valid = False
+    error_reason = ""
+
+    # Перевірка на заборонені типи (стікери та гіфки)
+    if message.content_type in ['sticker', 'animation']:
+        bot.send_message(message.chat.id, "❌ **Помилка:** Надсилати стікери та гіфки в предложку заборонено! Будь ласка, надішли чистий текст або PDF.")
+        return
+
+    # Перевірка на тип контенту
+    if message.content_type == 'text':
+        normalized_text = message.text.strip().lower()
+        
+        # Перевірка на дублікат тексту
+        if normalized_text in PROCESSED_TEXT_IDEAS:
+            bot.send_message(message.chat.id, "❌ **Помилка:** Ця ідея вже була надіслана раніше! Будь ласка, не дублюй одне й те саме повідомлення.")
+            return
+
+        # Перевірка на наявність посилань через сутності Telegram API
+        has_link = False
+        if message.entities:
+            for entity in message.entities:
+                if entity.type in ['url', 'text_link']:
+                    has_link = True
+                    break
+        
+        if "http://" in normalized_text or "https://" in normalized_text or "t.me/" in normalized_text:
+            has_link = True
+
+        if has_link:
+            error_reason = "❌ **Помилка:** Надсилати посилання (лінки) в предложку поки неможливо! Надішли чистий текст або PDF-файл."
+        else:
+            is_valid = True
+            PROCESSED_TEXT_IDEAS.add(normalized_text)
+
+    elif message.content_type == 'document':
+        if message.document.file_name.lower().endswith('.pdf') or message.document.mime_type == 'application/pdf':
+            # Перевірка на дублікат файлу
+            if message.document.file_unique_id in PROCESSED_FILE_IDEAS:
+                bot.send_message(message.chat.id, "❌ **Помилка:** Цей файл уже був надісланий раніше! Будь ласка, не надсилай дублікати.")
+                return
+            
+            is_valid = True
+            PROCESSED_FILE_IDEAS.add(message.document.file_unique_id)
+        else:
+            error_reason = "❌ **Помилка:** Цей формат файлу заборонений. Можна надсилати тільки текст або файли у форматі PDF."
+    else:
+        error_reason = "❌ **Помилка:** Надсилати фото, відео, аудіо, стікери, гіфки або архіви заборонено. Я приймаю тільки текст та PDF."
+
+    if not is_valid:
+        bot.send_message(message.chat.id, error_reason, parse_mode="Markdown")
+        return
+
+    # Збір інформації про автора
+    user_username = f"@{message.from_user.username}" if message.from_user.username else "Немає юзернейму"
+    user_info = f"👤 Від: {message.from_user.first_name} ({user_username}) | ID: `{message.from_user.id}`"
+
+    try:
+        if message.content_type == 'text':
+            idea_text = (
+                f"💡 **Нова ідея через бота!**\n\n"
+                f"{message.text}\n\n"
+                f"{user_info}\n\n"
+                f"#предложка"
+            )
+            bot.send_message(ADMIN_CHAT_ID, idea_text, parse_mode="Markdown")
+        
+        elif message.content_type == 'document':
+            caption_text = (
+                f"💡 **Нова ідея (PDF-файл) через бота!**\n\n"
+                f"📁 Файл: {message.document.file_name}\n\n"
+                f"{user_info}\n\n"
+                f"#предложка"
+            )
+            bot.send_document(ADMIN_CHAT_ID, message.document.file_id, caption=caption_text, parse_mode="Markdown")
+
+        # Відповідь користувачу з подякою та GIF
+        thank_you_caption = (
+            "🥰 **Дякую! Твою ідею успішно відправлено автору.**\n\n"
+            "Обов'язково чекай на згадку свого нікнейму у відео, якщо ідея сподобається і буде взята в роботу! 🎬🐳"
+        )
+        bot.send_animation(
+            chat_id=message.chat.id,
+            animation=THANK_YOU_GIF_URL,
+            caption=thank_you_caption,
+            parse_mode="Markdown"
+        )
+        logging.info(f"📩 Отримано нову ідею від {user_username}")
+
+    except Exception as e:
+        logging.error(f"❌ Не вдалося надіслати ідею адміну: {e}")
+        bot.send_message(message.chat.id, "❌ Сталася помилка при відправці ідеї на сервер. Спробуй пізніше.")
 
 
 # === ОБРОБКА АВТОМАТИЧНО ПЕРЕСЛАНИХ ДОПИСІВ (ТРИГЕР ПРИВІТАННЯ) ===
