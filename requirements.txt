@@ -1,4 +1,4 @@
 pytelegrambotapi
 flask
 gunicorn
-google-generativeai
+google-genai
