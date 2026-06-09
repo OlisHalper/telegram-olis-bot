@@ -29,17 +29,34 @@ bot.set_my_commands([
 ])
 
 # Твой ключ
-API_KEY = os.getenv("GEMINI_API_KEY") 
+API_KEY = os.getenv("GEMINI_API_KEY")
+if not API_KEY:
+    logging.error("❌ GEMINI_API_KEY не знайдено! Модерація Gemini не працюватиме. Встановіть змінну середовища GEMINI_API_KEY на render.com")
+else:
+    logging.info("✅ GEMINI_API_KEY знайдено, Gemini модерація активна.")
 genai.configure(api_key=API_KEY)
 
 # === НАЛАШТУВАННЯ БЕЗПЕКИ (ЦЕ ВАЖЛИВО!) ===
+# Використовуємо enum-формат для сумісності з новими версіями google-generativeai (1.x+)
 # Ми кажемо Google: "Не блокуй запити, навіть якщо там є мат або агресія"
-safety_settings = [
-    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-]
+try:
+    from google.generativeai.types import HarmCategory, HarmBlockThreshold
+    safety_settings = {
+        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+    }
+    logging.info("✅ Gemini safety_settings: використовується новий enum-формат (google-generativeai 1.x+)")
+except ImportError:
+    # Старий формат для версій < 1.0
+    safety_settings = [
+        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+    ]
+    logging.info("✅ Gemini safety_settings: використовується старий рядковий формат (google-generativeai < 1.0)")
 
 # Ініціалізація моделі ОБОВ'ЯЗКОВО з safety_settings
 model = genai.GenerativeModel('gemini-1.5-flash', safety_settings=safety_settings)
@@ -666,11 +683,13 @@ def handle_messages(message):
         USER_ACTIVITY[user_id] = [] # Очищаємо активність після муту
         return
 
-    # --- 5. Стоп-слова ---
-    if message.text:
-        text = message.text.lower()
+    # --- 5. Стоп-слова (перевіряємо і текст, і підпис до фото/файлу) ---
+    # ВИПРАВЛЕННЯ: раніше перевірявся тільки message.text, тепер також message.caption
+    text_for_stopwords = message.text or message.caption
+    if text_for_stopwords:
+        text = text_for_stopwords.lower()
         for word in STOP_WORDS:
-            # Використовуємо пошук слова в тексті
+            # Використовуємо пошук слова в тексті або підписі
             if word in text:
                 logging.warning(f"🚨 [МОДЕРАЦІЯ] Виявлено стоп-слово '{word}' від @{username}. Видача муту.")
                 
