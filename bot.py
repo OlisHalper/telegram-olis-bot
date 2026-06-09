@@ -10,41 +10,31 @@ import threading
 import google.generativeai as genai
 
 # === НАЛАШТУВАННЯ ЛОГУВАННЯ ===
-# Налаштовуємо логування, щоб бачити, що відбувається в консолі
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # === КОНФІГУРАЦІЯ БОТА ===
 TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
     logging.error("❌ BOT_TOKEN не знайдено. Встановіть його в змінні оточення!")
-    # Виходимо, якщо токен не знайдено
-    # exit(1) 
 
-# Ініціалізація бота
 bot = telebot.TeleBot(TOKEN, threaded=False)
 
-# === ДОБАВЛЯЕМ НА ТВОЙ СКРИНШОТ КНОПКУ МЕНЮ ===
 bot.set_my_commands([
     telebot.types.BotCommand("start", "🚀 Запустити бота / Головне меню")
 ])
 
-# Твой ключ
 API_KEY = os.getenv("GEMINI_API_KEY") 
 genai.configure(api_key=API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')  # <-- ДОБАВИТЬ ТОЛЬКО ЭТУ СТРОКУ
+model = genai.GenerativeModel('gemini-1.5-flash')
 
 # === ОСНОВНІ ПОСИЛАННЯ ТА ID ===
 CHANNEL_USERNAME = "@whoisolis"
-# ВАШІ АКТУАЛЬНІ ID
 CHANNEL_ID = -1003083438241 
 DISCUSSION_GROUP_ID = -1003210182852 
-# 1. Твой личный Telegram ID (куда будут приходить идеи)
-ADMIN_CHAT_ID = -1003994825567 #идеи чат id
+ADMIN_CHAT_ID = -1003994825567
 
-# 2. Ссылка на GIF-благодарность за идею
 THANK_YOU_GIF_URL = "https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExY2VhZXI0eXE5ZTNncHFpZDFwaXJkbXYwZzRxcWo1YTY4eXd3cW14OSZlcD12MV9naWZzX3RyZW5kaW5nJmN0PWc/MDJ9IbxxvDUQM/giphy.gif"
 
-# 3. Списки для защиты от дубликатов (остаются в памяти пока бот запущен)
 PROCESSED_TEXT_IDEAS = set()
 PROCESSED_FILE_IDEAS = set()
 
@@ -56,14 +46,12 @@ BOT_LINK = "https://t.me/olisos_bot"
 
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton
 
-# Постоянное нижнее меню (вместо ручного ввода /start)
 def get_main_menu_keyboard():
     markup = ReplyKeyboardMarkup(resize_keyboard=True, is_persistent=True)
     markup.add(KeyboardButton("💡 Надіслати ідею"))
     markup.add(KeyboardButton("🧾 Правила чату"))
     return markup
 
-# Клавиатура с кнопкой отмены (появляется только во время ввода идеи)
 def get_cancel_keyboard():
     markup = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     markup.add(KeyboardButton("❌ Скасувати"))
@@ -72,7 +60,6 @@ def get_cancel_keyboard():
 # === МОДЕРАЦІЯ ===
 STOP_WORDS = [
     # РУССКИЙ / УКРАИНСКИЙ / ENGLISH
-    # Спам / Скам
     "переходи по ссылке", "переходь за посиланням", "click the link",
     "заработай", "зароби", "earn money",
     "быстрый доход", "швидкий дохід", "quick income",
@@ -113,7 +100,6 @@ STOP_WORDS = [
     "заберите приз", "заберіть приз", "claim prize",
     "акция телеграм", "акція телеграм", "telegram promo",
 
-    # Войны / Экстремизм / Политика (UA/RU/EN)
     "суицид", "суїцид", "suicide",
     "самоубийство", "самогубство", "suicide",
     "повешался", "повісився", "hanged himself",
@@ -141,7 +127,6 @@ STOP_WORDS = [
     "хохол", "хохол", "khokhol",
     "зеля", "зеля", "zelensky",
 
-    # Наркотики / Запрещенка
     "нсфл", "nsfl", "nsfl",
     "детское порно", "дитяче порно", "child porn",
     "порнография с животными", "зоофілія", "bestiality",
@@ -160,7 +145,6 @@ STOP_WORDS = [
     "hydra", "hydra", "hydra",
     "гидра", "гідра", "hydra",
 
-    # Дискриминация и оскорбления
     "пидоросня", "підоросня", "faggots",
     "пидорасня", "підорасня", "faggots",
     "сдохни", "здохни", "die",
@@ -189,7 +173,6 @@ STOP_WORDS = [
     "шлюха", "шлюха", "whore",
     "шалава", "шалава", "slut",
 
-    # Контент 18+
     "порно", "порно", "porn",
     "порнуха", "порнуха", "porn",
     "porno", "porno", "porno",
@@ -200,52 +183,70 @@ STOP_WORDS = [
     "слив интимок", "злив інтимок", "intimate leak",
     "слив интим", "злив інтим", "intimate leak",
     "вирт", "вірт", "cybersex"
-
-    # Додайте сюди інші слова та фрази (наприклад, нецензурна лексика, екстремізм і т.д.)
-
 ]
 
-MUTE_DURATION_SECONDS = 900 # 15 хвилин
+MUTE_DURATION_SECONDS = 900
 FLOOD_LIMIT = 10
 TIME_WINDOW_SECONDS = 10
-USER_ACTIVITY = {} # {user_id: [(timestamp, message_id), ...]}
+USER_ACTIVITY = {}
 
-# === ВІДСТЕЖЕННЯ МЕДІА-ГРУП для усунення дублювання ===
-# Словник для відстеження вже оброблених media-груп (альбомів)
-PROCESSED_MEDIA_GROUPS = {} # {media_group_id: timestamp}
-MEDIA_GROUP_TIMEOUT = 10 # Час, протягом якого повідомлення вважаються частиною групи (в секундах)
+PROCESSED_MEDIA_GROUPS = {}
+MEDIA_GROUP_TIMEOUT = 10
 
-def check_with_gemini(text):
+def check_with_gemini(text=None, photo_bytes=None):
     try:
-        response = model.generate_content(
-            f"Проаналізуй коментар на наявність агресії, булінгу або прихованих образ. "
-            f"Відповідай тільки 'YES' якщо є образа, або 'NO' якщо все добре. Коментар: '{text}'"
+        contents = []
+        
+        prompt = (
+            "Проаналізуй контент (текст та/або зображення) на наявність агресії, булінгу, "
+            "жорстоких образ, мату або забороненого контенту. "
+            "Відповідай тільки однією строкою: 'YES' якщо є порушення, або 'NO' якщо все добре."
         )
+        contents.append(prompt)
+        
+        if text:
+            contents.append(f"Текст для перевірки: '{text}'")
+            
+        if photo_bytes:
+            contents.append({
+                'mime_type': 'image/jpeg',
+                'data': photo_bytes
+            })
+            
+        response = model.generate_content(contents)
+        
+        if hasattr(response, 'prompt_feedback') and response.prompt_feedback.block_reason:
+            logging.warning("🤖 [GEMINI] Запит заблоковано фільтрами безпеки Google. Авто-бан.")
+            return True
+        if response.candidates and response.candidates[0].finish_reason.name == 'SAFETY':
+            logging.warning("🤖 [GEMINI] Відповідь заблоковано через SAFETY. Авто-бан.")
+            return True
+            
         return "YES" in response.text.upper()
+        
     except Exception as e:
         logging.error(f"Помилка Gemini: {e}")
+        if "text" in str(e).lower() or "safety" in str(e).lower():
+            return True
         return False
 
-# === КНОПКИ ===
 def get_buttons():
     keyboard = InlineKeyboardMarkup()
     keyboard.row(InlineKeyboardButton("🧾 Правила", url=RULES_LINK))
     return keyboard
 
-# === ФУНКЦІЯ ВІДПРАВКИ ПРИВІТАННЯ З ПОВТОРНИМИ СПРОБАМИ ===
 def send_welcome_message(chat_id, reply_to_message_id=None):
-    """Відправляє привітання, намагаючись повторно, щоб уникнути помилки 'message to be replied not found'."""
     caption = (
         "👋 Привіт, ти потрапив у коментарі. Внизу цікаві посилання та правила поведінки (будь ласка, почитай їх)🐳\n\n"
         "📸 Мій <a href='{inst}'>инстаграм</a>\n"
         "🔴 Мій <a href='{yt}'>ютуб</a>\n\n"
         "💡 <a href='{bot}'>Тут</a> ти можеш запропонувати мне свою ідею для відео\n\n"
         "Написавши коментар, ти погоджуєшся з "
-        "<a href='{rules}'>правилами</a> чату 🐳"
+        "<a href='{rules}'>правилами</a> чату"
     ).format(inst=INST_LINK, yt=CHANNEL_LINK, rules=RULES_LINK, bot=BOT_LINK)
 
     max_retries = 3
-    delay = 1.0 # Початкова затримка
+    delay = 1.0
 
     for attempt in range(max_retries):
         try:
@@ -258,19 +259,17 @@ def send_welcome_message(chat_id, reply_to_message_id=None):
                 reply_to_message_id=reply_to_message_id
             )
             logging.info(f"✅ Привітання відправлено (спроба {attempt+1}) у відповідь на ID: {reply_to_message_id}")
-            return # Успіх
+            return 
         
         except apihelper.ApiTelegramException as e:
             error_message = str(e)
             
-            # Обробка частої помилки (повідомлення ще не доступне в Telegram API)
             if attempt < max_retries - 1 and "Bad Request: message to be replied not found" in error_message:
                 logging.warning(f"⚠️ Помилка 400: Повідомлення для відповіді {reply_to_message_id} не знайдено. Повтор через {delay:.1f} сек. ({attempt+1}/{max_retries})")
                 time.sleep(delay)
                 delay *= 1.5 
                 continue
             
-            # У разі інших помилок API, пробуємо відправити просто текст
             logging.warning(f"⚠️ Помилка відправки GIF-привітання (спроба {attempt+1}): {e}. Відправка текстової версії.")
             
             try:
@@ -293,10 +292,8 @@ def send_welcome_message(chat_id, reply_to_message_id=None):
 
     logging.error(f"❌ Не вдалося відправити привітання після {max_retries} спроб.")
 
-
 def process_idea_step(message):
     try:
-        # 1. ОБРАБОТКА КНОПКИ «СКАСУВАТИ» ИЛИ ЛЮБОЙ КОМАНДЫ (НАПРИМЕР, /start)
         if message.content_type == 'text':
             if message.text == "❌ Скасувати" or message.text.startswith('/'):
                 bot.send_message(
@@ -306,20 +303,17 @@ def process_idea_step(message):
                 )
                 return
 
-        # 2. СТРОГАЯ ФИЛЬТРАЦИЯ ПО ТИПУ (Только ТЕКСТ или PDF)
         is_valid = False
         idea_text = ""
-        normalized_text = "" # Переменная для очищенного текста
+        normalized_text = ""
 
         if message.content_type == 'text':
             is_valid = True
             idea_text = message.text
             
-            # --- УМНАЯ ОЧИСТКА ТЕКСТА ОТ СМАЙЛОВ И ЗНАКОВ ПРЕПИНАНИЯ ---
             import re
             normalized_text = re.sub(r'[^a-zA-Z0-9а-яА-ЯёЁіІїЇєЄґҐ]', '', idea_text).lower()
             
-            # Если после очистки ничего не осталось — значит, там были только смайлы/точки
             if not normalized_text:
                 bot.send_message(
                     message.chat.id, 
@@ -338,7 +332,6 @@ def process_idea_step(message):
                 is_valid = True
                 idea_text = message.caption if message.caption else "Ідея знаходиться всередині PDF-файлу."
 
-        # Если прислали фото, стикер или аудио — ругаемся и ждем заново
         if not is_valid:
             bot.send_message(
                 message.chat.id, 
@@ -351,16 +344,15 @@ def process_idea_step(message):
             bot.register_next_step_handler(message, process_idea_step)
             return
 
-    # === 2.5 ПРОВЕРКА НА ДУБЛИКАТЫ И СПАМ ===
         if message.content_type == 'text':
-            if normalized_text in PROCESSED_TEXT_IDEAS: # Проверяем именно очищенный текст
+            if normalized_text in PROCESSED_TEXT_IDEAS: 
                 bot.send_message(
                     message.chat.id, 
                     "⚠️ **Ця ідея вже була надіслана раніше!**\n\nБудь ласка, надішли іншу пропозицію або натисни «❌ Скасувати».", 
                     parse_mode="Markdown",
-                    reply_markup=get_cancel_keyboard() # Возвращаем кнопку отмены вместо главного меню
+                    reply_markup=get_cancel_keyboard()
                 )
-                bot.register_next_step_handler(message, process_idea_step) # Заставляем бота снова ждать идею
+                bot.register_next_step_handler(message, process_idea_step)
                 return
         elif message.content_type == 'document':
             file_uid = message.document.file_unique_id
@@ -369,19 +361,15 @@ def process_idea_step(message):
                     message.chat.id, 
                     "⚠️ **Цей файл уже був надісланий раніше!**\n\nБудь ласка, надішли інший файл або натисни «❌ Скасувати».", 
                     parse_mode="Markdown",
-                    reply_markup=get_cancel_keyboard() # Возвращаем кнопку отмены
+                    reply_markup=get_cancel_keyboard() 
                 )
-                bot.register_next_step_handler(message, process_idea_step) # Заставляем бота снова ждать идею
+                bot.register_next_step_handler(message, process_idea_step)
                 return
 
-        # === 3. ФИЛЬТРАЦИЯ ПО ТРИГГЕР-СЛОВАМ (Сверяемся со STOP_WORDS) ===
-        # Находим все стоп-слова, которые есть в тексте пользователя
         triggered_words = [word for word in STOP_WORDS if word.lower() in idea_text.lower()]
         
         if triggered_words:
-            # Красиво оформляем найденные слова в кавычки через запятую
             found_words_str = ", ".join(f'"{word}"' for word in triggered_words)
-            
             bot.send_message(
                 message.chat.id, 
                 f"⚠️ **У твоїй ідеї знайдено заборонене слово:** {found_words_str}\n\n"
@@ -392,8 +380,16 @@ def process_idea_step(message):
             bot.register_next_step_handler(message, process_idea_step)
             return
 
-        
-        # === 4. ПРЕСЫЛКА В ЧАТ С ВЫДЕЛЕНИЕМ ЖИРНЫМ ===
+        if idea_text and len(idea_text) > 3:
+            if check_with_gemini(text=idea_text):
+                bot.send_message(
+                    message.chat.id, 
+                    "⚠️ **Твою ідею відхилено системою модерації!**\n\nБудь ласка, пиши культурно та без образ.", 
+                    parse_mode="Markdown",
+                    reply_markup=get_main_menu_keyboard()
+                )
+                return
+
         user_username = f"@{message.from_user.username}" if message.from_user.username else "Немає юзернейму"
         user_info = f"👤 Від: {message.from_user.first_name} ({user_username}) | ID: `{message.from_user.id}`"
         
@@ -404,13 +400,11 @@ def process_idea_step(message):
             caption_text = f"💡 **Нова ідея (PDF-файл) через бота!**\n\n📁 Файл: {message.document.file_name}\n**Опис:** {idea_text}\n\n{user_info}\n\n#предложка"
             bot.send_document(ADMIN_CHAT_ID, message.document.file_id, caption=caption_text, parse_mode="Markdown")
 
-        # === 4.5 СОХРАНЕНИЕ В ПАМЯТЬ ДЛЯ ЗАЩИТЫ ОТ ПОВТОРОВ ===
         if message.content_type == 'text':
             PROCESSED_TEXT_IDEAS.add(normalized_text)
         elif message.content_type == 'document':
             PROCESSED_FILE_IDEAS.add(message.document.file_unique_id)
 
-        # === 5. УСПЕШНЫЙ ФИНАЛ С АНИМАЦИЕЙ БЛАГОДАРНОСТИ И ВОЗВРАТ МЕНЮ ===
         thank_you_caption = (
             "🥰 **Дякую! Твою ідею успешно відправлено автору.**\n\n"
             "Обов'язково чекай на згадку свого нікнейму у відео, якщо ідея сподобається і буде взята в роботу! 🎬🐳"
@@ -432,7 +426,6 @@ def process_idea_step(message):
             reply_markup=get_main_menu_keyboard()
         )
 
-# Хэндлер, который ловит нажатия кнопок главного меню
 @bot.message_handler(func=lambda message: message.text in ["💡 Надіслати ідею", "🧾 Правила чату"] and message.chat.type == 'private')
 def handle_main_menu(message):
     if message.text == "🧾 Правила чату":
@@ -448,7 +441,6 @@ def handle_main_menu(message):
         )
         bot.register_next_step_handler(message, process_idea_step)
 
-# === КОМАНДА /start ===
 @bot.message_handler(commands=['start'])
 def send_rules(message):
     if message.chat.type == 'private':
@@ -459,14 +451,12 @@ def send_rules(message):
             f"Всі пропозиції розглядаються особисто автором!\n\n"
             f"Обирай дію в меню нижче 👇",
             parse_mode="Markdown",
-            reply_markup=get_main_menu_keyboard() # <--- Вызываем нижнее меню
+            reply_markup=get_main_menu_keyboard()
         )
     else:
         reply_id = getattr(message.reply_to_message, 'message_id', None)
         send_welcome_message(message.chat.id, reply_to_message_id=reply_id)
 
-
-# === ОБРОБКА АВТОМАТИЧНО ПЕРЕСЛАНИХ ДОПИСІВ (ТРИГЕР ПРИВІТАННЯ) ===
 @bot.message_handler(
     func=lambda m: m.chat.id == DISCUSSION_GROUP_ID and m.is_automatic_forward, 
     content_types=['text', 'photo', 'video', 'audio', 'voice', 'video_note', 'document', 'sticker', 'animation', 'poll']
@@ -477,34 +467,27 @@ def handle_forwarded_channel_post(message):
     logging.info(f"👀 [ТРИГЕР] Отримано автоматичний форвард. ID: {message.message_id}. Media Group ID: {message.media_group_id}")
     
     try:
-        # --- БЛОК АНТИ-ДУБЛІКАТ ДЛЯ МЕДІА-ГРУП ---
         if message.media_group_id:
             now = time.time()
             
-            # 1. Очищення старих записів
             PROCESSED_MEDIA_GROUPS = {k: v for k, v in PROCESSED_MEDIA_GROUPS.items() if now - v < MEDIA_GROUP_TIMEOUT}
             
-            # 2. Перевірка, чи була ця медіа-група вже оброблена
             if message.media_group_id in PROCESSED_MEDIA_GROUPS:
                 logging.info(f"⏭ [ТРИГЕР] Пропуск дубліката медіа-групи {message.media_group_id}. Привітання вже відправлено.")
-                return # Виходимо, щоб уникнути дублювання
+                return 
             
-            # 3. Позначення групи як обробленої
             PROCESSED_MEDIA_GROUPS[message.media_group_id] = now
             logging.info(f"📢 [ТРИГГЕР] Новий допис (медіа-група {message.media_group_id}). Запуск привітання...")
             
         else:
-            # Поодинокий допис (текст, одне фото, одне відео і т.д.)
             logging.info(f"📢 [ТРИГЕР] Новий поодинокий допис. Запуск привітання...")
 
-        # Відправляємо привітання, відповідаючи на сам пересланий допис із каналу
         send_welcome_message(DISCUSSION_GROUP_ID, reply_to_message_id=message.message_id)
         
     except Exception as e:
         logging.error(f"⚠️ Помилка при обробці пересланого допису: {e}", exc_info=True)
 
 
-# === МУТ ===
 def apply_mute(chat_id, user_id, username, reason, reply_to_message_id=None):
     try:
         mute_until = datetime.datetime.now() + datetime.timedelta(seconds=MUTE_DURATION_SECONDS)
@@ -526,37 +509,30 @@ def apply_mute(chat_id, user_id, username, reason, reply_to_message_id=None):
         
         bot.send_message(
             chat_id, 
-            f"@{username} ⚠️ {reason}\nМут на 30 хвилин.",
+            f"@{username} ⚠️ {reason}\nМут на 15 хвилин.",
             reply_to_message_id=reply_to_message_id
         )
         logging.warning(f"🔇 Мут {username} до {mute_until}. Причина: {reason}")
     except Exception as e:
         logging.error(f"❌ Помилка при видачі муту. Перевірте права бота: {e}", exc_info=True)
 
-# === ФУНКЦІЯ ДЛЯ ПОШУКУ ВИХІДНОГО ДОПИСУ КАНАЛУ ===
 def find_channel_post_id(message):
-    """Знаходить ID автоматично пересланого допису каналу, на який потрібно відповісти в треді"""
     try:
         if message.reply_to_message:
-            # Перевіряємо, чи є батьківське повідомлення автоматичним форвардом
             if getattr(message.reply_to_message, 'is_automatic_forward', False):
                 return message.reply_to_message.message_id
-            # Рекурсивно перевіряємо ланцюжок відповідей
             return find_channel_post_id(message.reply_to_message)
         return None
     except:
         return None
 
-# === АНТИФЛУД, СТОП-СЛОВА ТА АНТИСПАМ (МОДЕРАЦІЯ КОМЕНТАРІВ) ===
 @bot.message_handler(content_types=['text', 'sticker', 'photo', 'video', 'document', 'audio', 'voice', 'animation'])
 def handle_messages(message):
     global USER_ACTIVITY
     
-    # 1. Ігноруємо автоматично переслані дописи та повідомлення від самого каналу
     if getattr(message, 'is_automatic_forward', False) or message.sender_chat is not None:
         return
     
-    # 2. Обробляємо тільки в цільовій групі коментарів
     if message.chat.id != DISCUSSION_GROUP_ID:
         return
         
@@ -566,10 +542,8 @@ def handle_messages(message):
     
     logging.info(f"👀 [МОДЕРАЦІЯ] Отримано коментар від @{username}. Тип: {message.content_type}")
     
-    # Шукаємо вихідний допис каналу для відповіді-повідомлення про мут
     channel_post_id = find_channel_post_id(message)
 
-    # --- 3. ПЕРЕВІРКА НА НАЯВНІСТЬ ПОСИЛАНЬ (АНТИСПАМ) ---
     has_link = False
     if message.entities:
         for entity in message.entities:
@@ -582,7 +556,6 @@ def handle_messages(message):
                 has_link = True
                 break
 
-    # Якщо звичайний юзер надіслав посилання — просто видаляємо і зупиняємо обробку
     if has_link:
         try:
             bot.delete_message(chat_id, message.message_id)
@@ -590,18 +563,15 @@ def handle_messages(message):
             logging.error(f"Помилка при видаленні посилання в коментарях: {e}")
         return
 
-    # --- 4. Антифлуд ---
     now = datetime.datetime.now().timestamp()
     USER_ACTIVITY.setdefault(user_id, [])
     
-    # Очищаємо старі записи
     USER_ACTIVITY[user_id] = [(t, msg_id) for t, msg_id in USER_ACTIVITY[user_id] if now - t < TIME_WINDOW_SECONDS]
     USER_ACTIVITY[user_id].append((now, message.message_id))
 
     if len(USER_ACTIVITY[user_id]) >= FLOOD_LIMIT:
         logging.warning(f"🚨 [МОДЕРАЦІЯ] Виявлено флуд від @{username}. Видача муту.")
         
-        # Видаляємо ВСІ повідомлення з флуду
         for timestamp, msg_id in USER_ACTIVITY[user_id]:
             try:
                 bot.delete_message(chat_id, msg_id)
@@ -615,14 +585,12 @@ def handle_messages(message):
             f"Флуд ({FLOOD_LIMIT}+ повідомлень за {TIME_WINDOW_SECONDS} секунд)",
             reply_to_message_id=channel_post_id
         )
-        USER_ACTIVITY[user_id] = [] # Очищаємо активність після муту
+        USER_ACTIVITY[user_id] = []
         return
 
-    # --- 5. Стоп-слова ---
     if message.text:
         text = message.text.lower()
         for word in STOP_WORDS:
-            # Використовуємо пошук слова в тексті
             if word in text:
                 logging.warning(f"🚨 [МОДЕРАЦІЯ] Виявлено стоп-слово '{word}' від @{username}. Видача муту.")
                 
@@ -640,14 +608,26 @@ def handle_messages(message):
                 )
                 return
 
-    # --- 6. Розумна перевірка через Gemini (якщо стоп-слова не спрацювали) ---
-    # Створюємо змінну, яка бере або текст повідомлення, або підпис (caption)
-    text_to_check = message.text or message.caption
-    
-    if text_to_check and len(text_to_check) > 3: 
-        if check_with_gemini(text_to_check):
+    # --- 6. Розумна перевірка через Gemini (ТЕКСТ + КАРТИНКИ) ---
+    text_to_check = message.text or message.caption or ""
+    photo_bytes = None
+
+    # Якщо юзер надіслав фото — витягуємо його для ІІ
+    if message.content_type == 'photo':
+        try:
+            file_info = bot.get_file(message.photo[-1].file_id)
+            photo_bytes = bot.download_file(file_info.file_path)
+        except Exception as e:
+            logging.error(f"⚠️ Не вдалося завантажити фото для Gemini: {e}")
+
+    # Перевіряємо, тільки якщо є текст (більше 3 символів) АБО надіслана картинка
+    if (text_to_check and len(text_to_check) > 3) or photo_bytes:
+        if check_with_gemini(text=text_to_check, photo_bytes=photo_bytes):
             logging.warning(f"🤖 [GEMINI] Виявлено токсичність від @{username}.")
-            bot.delete_message(chat_id, message.message_id)
+            try:
+                bot.delete_message(chat_id, message.message_id)
+            except Exception as e:
+                logging.error(f"⚠️ Не вдалося видалити токсичне повідомлення: {e}")
             apply_mute(chat_id, user_id, username, "Прихована агресія (AI-модерація)", reply_to_message_id=channel_post_id)
             return
     
@@ -660,7 +640,6 @@ app = Flask(__name__)
 WEBHOOK_HOST = os.getenv("RENDER_EXTERNAL_URL", "https://telegram-olis-bot.onrender.com")
 WEBHOOK_URL = f"{WEBHOOK_HOST}/{TOKEN}"
 
-# Список обновлений, которые бот должен слушать (для модерации чатов и предложки)
 ALLOWED_UPDATES = ['message', 'channel_post', 'my_chat_member', 'chat_member', 'callback_query']
 
 try:
@@ -668,7 +647,6 @@ try:
     bot.remove_webhook()
     time.sleep(1)
     
-    # Передаем список ALLOWED_UPDATES, чтобы Telegram присылал ВСЕ события
     bot.set_webhook(url=WEBHOOK_URL, allowed_updates=ALLOWED_UPDATES)
     logging.info(f"✅ Webhook успішно встановлено на адресу: {WEBHOOK_URL}")
 except Exception as e:
@@ -680,7 +658,6 @@ def webhook():
         json_string = request.get_data().decode('utf-8')
         update = telebot.types.Update.de_json(json_string)
         
-        # Теперь это выполнится строго до того, как Flask отдаст 200 OK
         bot.process_new_updates([update])
         return '', 200
     else:
