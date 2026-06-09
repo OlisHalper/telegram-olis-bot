@@ -7,6 +7,7 @@ import logging
 from telebot import apihelper 
 from flask import Flask, request
 import threading
+import google.generativeai as genai
 
 # === НАЛАШТУВАННЯ ЛОГУВАННЯ ===
 # Налаштовуємо логування, щоб бачити, що відбувається в консолі
@@ -26,6 +27,11 @@ bot = telebot.TeleBot(TOKEN, threaded=False)
 bot.set_my_commands([
     telebot.types.BotCommand("start", "🚀 Запустити бота / Головне меню")
 ])
+
+# Твой ключ
+API_KEY = os.getenv("GEMINI_API_KEY") 
+genai.configure(api_key=API_KEY)
+model = genai.GenerativeModel('gemini-1.5-flash')  # <-- ДОБАВИТЬ ТОЛЬКО ЭТУ СТРОКУ
 
 # === ОСНОВНІ ПОСИЛАННЯ ТА ID ===
 CHANNEL_USERNAME = "@whoisolis"
@@ -65,144 +71,138 @@ def get_cancel_keyboard():
 
 # === МОДЕРАЦІЯ ===
 STOP_WORDS = [
-    
-    "переходи по ссылке",
-    "заработай",
-    "быстрый доход",
-    "крипта",
-    "слив",
-    "продаю",
-    "ставки",
-    "куплю",
-    "ссылка в профиле",
-    "приватка",
-    "приватный канал",
-    "успей вступить",
-    "сливы",
-    "заработок",
-    "ищу воркеров",
-    "схема заработка",
-    "легкие деньги",
-    "раскрутка счета",
-    "трейдинг",
-    "арбитраж",
-    "капер",
-    "казино",
-    "слоты",
-    "букмекерская",
-    "премиум бесплатно",
-    "дарю прем",
-    "подтвердите аккаунт",
-    "аккаунт заблокирован",
-    "введите пароль",
-    "пройдите верификацию",
-    "премиум бесплатно",
-    "premium бесплатно",
-    "дарю премиум",
-    "раздача прем",
-    "раздача премиум",
-    "раздача премиума",
-    "раздача премиумов",
-    "розыгрыш",
-    "заберите приз",
-    "акция телеграм",
+    # РУССКИЙ / УКРАИНСКИЙ / ENGLISH
+    # Спам / Скам
+    "переходи по ссылке", "переходь за посиланням", "click the link",
+    "заработай", "зароби", "earn money",
+    "быстрый доход", "швидкий дохід", "quick income",
+    "крипта", "крипта", "crypto",
+    "слив", "злив", "leak",
+    "продаю", "продаю", "selling",
+    "ставки", "ставки", "betting",
+    "куплю", "куплю", "buying",
+    "ссылка в профиле", "посилання в профілі", "link in bio",
+    "приватка", "приватка", "private channel",
+    "приватный канал", "приватний канал", "private channel",
+    "успей вступить", "встигни вступити", "join now",
+    "сливы", "зливи", "leaks",
+    "заработок", "заробіток", "earnings",
+    "ищу воркеров", "шукаю воркерів", "looking for workers",
+    "схема заработка", "схема заробітку", "money scheme",
+    "легкие деньги", "легкі гроші", "easy money",
+    "раскрутка счета", "розкрутка рахунку", "account boosting",
+    "трейдинг", "трейдинг", "trading",
+    "арбитраж", "арбітраж", "arbitrage",
+    "капер", "капер", "capper",
+    "казино", "казино", "casino",
+    "слоты", "слоти", "slots",
+    "букмекерская", "букмекерська", "bookmaker",
+    "премиум бесплатно", "преміум безкоштовно", "free premium",
+    "дарю прем", "дарю прем", "giving away premium",
+    "подтвердите аккаунт", "підтвердіть акаунт", "verify account",
+    "аккаунт заблокирован", "акаунт заблоковано", "account blocked",
+    "введите пароль", "введіть пароль", "enter password",
+    "пройдите верификацию", "пройдіть верифікацію", "verify identity",
+    "premium бесплатно", "premium безкоштовно", "free premium",
+    "дарю премиум", "дарю преміум", "gift premium",
+    "раздача прем", "роздача прем", "premium giveaway",
+    "раздача премиум", "роздача преміум", "premium giveaway",
+    "раздача премиума", "роздача преміуму", "premium giveaway",
+    "раздача премиумов", "роздача преміумів", "premium giveaways",
+    "розыгрыш", "розіграш", "giveaway",
+    "заберите приз", "заберіть приз", "claim prize",
+    "акция телеграм", "акція телеграм", "telegram promo",
 
-    # Войны / Экстремизм
+    # Войны / Экстремизм / Политика (UA/RU/EN)
+    "суицид", "суїцид", "suicide",
+    "самоубийство", "самогубство", "suicide",
+    "повешался", "повісився", "hanged himself",
+    "повесился", "повісився", "hanged himself",
+    "вскрылся", "вскрывся", "slit wrists",
+    "вскрыться", "вскритися", "to slit wrists",
+    "вскроюсь", "вскриюся", "i will slit my wrists",
+    "вскройся", "вскрийся", "slit your wrists",
+    "повешайся", "повішайся", "hang yourself",
+    "повешусь", "повішуся", "i will hang myself",
+    "повесься", "повісься", "hang yourself",
+    "прирезать", "прирізати", "to stab",
+    "взорвать", "підірвати", "to blow up",
+    "купить ствол", "купити ствол", "buy a gun",
+    "купить пистолет", "купити пістолет", "buy a pistol",
+    "купить нож", "купити ніж", "buy a knife",
+    "трупы", "трупи", "corpses",
+    "расчлененка", "розчленування", "dismemberment",
+    "пытки", "тортури", "torture",
+    "избиение", "побиття", "beating",
+    "террор", "терор", "terror",
+    "путин", "путін", "putin",
+    "русня", "русня", "rusnya",
+    "хохлы", "хохли", "khokhols",
+    "хохол", "хохол", "khokhol",
+    "зеля", "зеля", "zelensky",
 
-    "суицид",
-    "самоубийство",
-    "повешался",
-    "повесился",
-    "вскрылся",
-    "вскрыться",
-    "вскроюсь",
-    "вскройся",
-    "повешайся",
-    "повешусь",
-    "повесься",
-    "прирезать",
-    "взорвать",
-    "купить ствол",
-    "купить пистолет",
-    "купить нож",
-    "трупы",
-    "расчлененка",
-    "пытки",
-    "избиение",
-    "террор",
-    "путин",
-    "русня",
-    "хохлы",
-    "хохол",
-    "зеля",
+    # Наркотики / Запрещенка
+    "нсфл", "nsfl", "nsfl",
+    "детское порно", "дитяче порно", "child porn",
+    "порнография с животными", "зоофілія", "bestiality",
+    "кладка", "закладка", "drug stash",
+    "шоп", "шоп", "shop",
+    "меф", "меф", "mephedrone",
+    "бошки", "бошки", "weed",
+    "гаш", "гаш", "hash",
+    "амф", "амф", "amphetamine",
+    "mdma", "mdma", "mdma",
+    "мдма", "мдма", "mdma",
+    "экстази", "екстазі", "ecstasy",
+    "кокс", "кокс", "coke",
+    "героин", "героїн", "heroin",
+    "гашиш", "гашиш", "hashish",
+    "hydra", "hydra", "hydra",
+    "гидра", "гідра", "hydra",
 
+    # Дискриминация и оскорбления
+    "пидоросня", "підоросня", "faggots",
+    "пидорасня", "підорасня", "faggots",
+    "сдохни", "здохни", "die",
+    "лесбуха", "лесбуха", "lesbian",
+    "лесбухи", "лесбухи", "lesbians",
+    "лезбуха", "лезбуха", "lesbian",
+    "лезбухи", "лезбухи", "lesbians",
+    "нига", "ніга", "nigger",
+    "негр", "негр", "nigger",
+    "черножопый", "чорножопий", "nigger",
+    "чорножопий", "чорножопий", "nigger",
+    "черножопий", "чорножопий", "nigger",
+    "инцел", "інцел", "incel",
+    "черномазый", "чорномазий", "nigger",
+    "даун", "даун", "down syndrome",
+    "аутист", "аутист", "autist",
+    "урод", "виродок", "freak",
+    "тварь", "потвора", "scum",
+    "мразь", "мразь", "scum",
+    "гнида", "гнида", "nit",
+    "скотина", "скотина", "beast",
+    "ничтожество", "нікчема", "nothingness",
+    "выродок", "виродок", "bastard",
+    "недоносок", "недоносок", "runt",
+    "падаль", "падаль", "carrion",
+    "шлюха", "шлюха", "whore",
+    "шалава", "шалава", "slut",
 
-    # Запрещенный контент (Педофилия, Зоофилия, Наркотики)
-
-    "нсфл", # NSFW/NSFL в русском сленге
-    "детское порно",
-    "порнография с животными",
-    "кладка",
-    "шоп",
-    "меф",
-    "бошки",
-    "гаш",
-    "амф",
-    "mdma",
-    "мдма",
-    "экстази",
-    "кокс",
-    "героин",
-    "гашиш",
-    "hydra",
-    "гидра",
-
-    # Дискриминация (Расизм, Сексизм, Гомофобия, Оскорбления)
-
-    "пидоросня",
-    "пидорасня",
-    "сдохни",
-    "лесбуха",
-    "лесбухи",
-    "лезбуха",
-    "лезбухи",
-    "нига",
-    "негр",
-    "черножопый",
-    "чорножопий",
-    "черножопий",
-    "инцел",
-    "черномазый",
-    "даун",
-    "аутист",
-    "урод",
-    "тварь",
-    "мразь",
-    "гнида",
-    "скотина",
-    "ничтожество",
-    "выродок",
-    "недоносок",
-    "падаль",
-    "шлюха",
-    "шалава",
-
-    # Контент для взрослых (18+ / Эротика)
-
-    "порно",
-    "порнуха",
-    "porno",
-
-    "нюдсы",
-    "слив фото",
-    "сливы интим",
-    "сливы интимок",
-    "слив интимок",
-    "слив интим",
-    "вирт",
-
+    # Контент 18+
+    "порно", "порно", "porn",
+    "порнуха", "порнуха", "porn",
+    "porno", "porno", "porno",
+    "нюдсы", "нюдси", "nudes",
+    "слив фото", "злив фото", "leak photo",
+    "сливы интим", "зливи інтим", "intimate leaks",
+    "сливы интимок", "зливи інтимок", "intimate leaks",
+    "слив интимок", "злив інтимок", "intimate leak",
+    "слив интим", "злив інтим", "intimate leak",
+    "вирт", "вірт", "cybersex"
 
     # Додайте сюди інші слова та фрази (наприклад, нецензурна лексика, екстремізм і т.д.)
+
 ]
 
 MUTE_DURATION_SECONDS = 900 # 15 хвилин
@@ -214,6 +214,17 @@ USER_ACTIVITY = {} # {user_id: [(timestamp, message_id), ...]}
 # Словник для відстеження вже оброблених media-груп (альбомів)
 PROCESSED_MEDIA_GROUPS = {} # {media_group_id: timestamp}
 MEDIA_GROUP_TIMEOUT = 10 # Час, протягом якого повідомлення вважаються частиною групи (в секундах)
+
+def check_with_gemini(text):
+    try:
+        response = model.generate_content(
+            f"Проаналізуй коментар на наявність агресії, булінгу або прихованих образ. "
+            f"Відповідай тільки 'YES' якщо є образа, або 'NO' якщо все добре. Коментар: '{text}'"
+        )
+        return "YES" in response.text.upper()
+    except Exception as e:
+        logging.error(f"Помилка Gemini: {e}")
+        return False
 
 # === КНОПКИ ===
 def get_buttons():
@@ -340,25 +351,27 @@ def process_idea_step(message):
             bot.register_next_step_handler(message, process_idea_step)
             return
 
-        # === 2.5 ПРОВЕРКА НА ДУБЛИКАТЫ И СПАМ ===
+    # === 2.5 ПРОВЕРКА НА ДУБЛИКАТЫ И СПАМ ===
         if message.content_type == 'text':
             if normalized_text in PROCESSED_TEXT_IDEAS: # Проверяем именно очищенный текст
                 bot.send_message(
                     message.chat.id, 
-                    "⚠️ **Ця ідея вже була надіслана раніше!**\n\nБудь ласка, не спам іншу або таку саму пропозицію.", 
+                    "⚠️ **Ця ідея вже була надіслана раніше!**\n\nБудь ласка, надішли іншу пропозицію або натисни «❌ Скасувати».", 
                     parse_mode="Markdown",
-                    reply_markup=get_main_menu_keyboard()
+                    reply_markup=get_cancel_keyboard() # Возвращаем кнопку отмены вместо главного меню
                 )
+                bot.register_next_step_handler(message, process_idea_step) # Заставляем бота снова ждать идею
                 return
         elif message.content_type == 'document':
             file_uid = message.document.file_unique_id
             if file_uid in PROCESSED_FILE_IDEAS:
                 bot.send_message(
                     message.chat.id, 
-                    "⚠️ **Цей файл уже був надісланий раніше!**\n\nБудь ласка, не надсилай дублікати.", 
+                    "⚠️ **Цей файл уже був надісланий раніше!**\n\nБудь ласка, надішли інший файл або натисни «❌ Скасувати».", 
                     parse_mode="Markdown",
-                    reply_markup=get_main_menu_keyboard()
+                    reply_markup=get_cancel_keyboard() # Возвращаем кнопку отмены
                 )
+                bot.register_next_step_handler(message, process_idea_step) # Заставляем бота снова ждать идею
                 return
 
         # === 3. ФИЛЬТРАЦИЯ ПО ТРИГГЕР-СЛОВАМ (Сверяемся со STOP_WORDS) ===
@@ -434,42 +447,6 @@ def handle_main_menu(message):
             reply_markup=get_cancel_keyboard()
         )
         bot.register_next_step_handler(message, process_idea_step)
-
-# === АНТИСПАМ ДЛЯ КОММЕНТАРИЕВ (УДАЛЕНИЕ ССЫЛОК) ===
-
-@bot.message_handler(func=lambda message: message.chat.type in ['group', 'supergroup'])
-def filter_links_in_comments(message):
-    try:
-        # 1. ИСКЛЮЧЕНИЕ: Если сообщение пришло от лица канала 
-        # или это автоматический пересыл поста из канала в комменты — игнорируем
-        if message.sender_chat is not None or getattr(message, 'is_automatic_forward', False):
-            return
-
-        # 2. ПРОВЕРКА НА НАЛИЧИЕ ССЫЛОК
-        has_link = False
-
-        # Проверяем ссылки в обычном тексте
-        if message.entities:
-            for entity in message.entities:
-                if entity.type in ['url', 'text_link']:
-                    has_link = True
-                    break
-
-        # Проверяем ссылки в подписях к картинкам/видео
-        if message.caption_entities:
-            for entity in message.caption_entities:
-                if entity.type in ['url', 'text_link']:
-                    has_link = True
-                    break
-
-        # 3. УДАЛЕНИЕ: Если обычный юзер прислал ссылку — удаляем сообщение
-        if has_link:
-            bot.delete_message(message.chat.id, message.message_id)
-            
-    except Exception as e:
-        import logging
-        logging.error(f"Помилка при видаленні посилання в коментарях: {e}")
-
 
 # === КОМАНДА /start ===
 @bot.message_handler(commands=['start'])
@@ -570,13 +547,13 @@ def find_channel_post_id(message):
     except:
         return None
 
-# === АНТИФЛУД І СТОП-СЛОВА (МОДЕРАЦІЯ КОМЕНТАРІВ) ===
+# === АНТИФЛУД, СТОП-СЛОВА ТА АНТИСПАМ (МОДЕРАЦІЯ КОМЕНТАРІВ) ===
 @bot.message_handler(content_types=['text', 'sticker', 'photo', 'video', 'document', 'audio', 'voice', 'animation'])
 def handle_messages(message):
     global USER_ACTIVITY
     
-    # 1. Ігноруємо автоматично переслані дописи
-    if getattr(message, 'is_automatic_forward', False):
+    # 1. Ігноруємо автоматично переслані дописи та повідомлення від самого каналу
+    if getattr(message, 'is_automatic_forward', False) or message.sender_chat is not None:
         return
     
     # 2. Обробляємо тільки в цільовій групі коментарів
@@ -592,7 +569,28 @@ def handle_messages(message):
     # Шукаємо вихідний допис каналу для відповіді-повідомлення про мут
     channel_post_id = find_channel_post_id(message)
 
-    # --- Антифлуд ---
+    # --- 3. ПЕРЕВІРКА НА НАЯВНІСТЬ ПОСИЛАНЬ (АНТИСПАМ) ---
+    has_link = False
+    if message.entities:
+        for entity in message.entities:
+            if entity.type in ['url', 'text_link']:
+                has_link = True
+                break
+    if message.caption_entities:
+        for entity in message.caption_entities:
+            if entity.type in ['url', 'text_link']:
+                has_link = True
+                break
+
+    # Якщо звичайний юзер надіслав посилання — просто видаляємо і зупиняємо обробку
+    if has_link:
+        try:
+            bot.delete_message(chat_id, message.message_id)
+        except Exception as e:
+            logging.error(f"Помилка при видаленні посилання в коментарях: {e}")
+        return
+
+    # --- 4. Антифлуд ---
     now = datetime.datetime.now().timestamp()
     USER_ACTIVITY.setdefault(user_id, [])
     
@@ -620,7 +618,7 @@ def handle_messages(message):
         USER_ACTIVITY[user_id] = [] # Очищаємо активність після муту
         return
 
-    # --- Стоп-слова ---
+    # --- 5. Стоп-слова ---
     if message.text:
         text = message.text.lower()
         for word in STOP_WORDS:
@@ -641,6 +639,17 @@ def handle_messages(message):
                     reply_to_message_id=channel_post_id
                 )
                 return
+
+    # --- 6. Розумна перевірка через Gemini (якщо стоп-слова не спрацювали) ---
+    # Створюємо змінну, яка бере або текст повідомлення, або підпис (caption)
+    text_to_check = message.text or message.caption
+    
+    if text_to_check and len(text_to_check) > 3: 
+        if check_with_gemini(text_to_check):
+            logging.warning(f"🤖 [GEMINI] Виявлено токсичність від @{username}.")
+            bot.delete_message(chat_id, message.message_id)
+            apply_mute(chat_id, user_id, username, "Прихована агресія (AI-модерація)", reply_to_message_id=channel_post_id)
+            return
     
     logging.info(f"✅ [МОДЕРАЦІЯ] Коментар від @{username} пройшов перевірку.")
             
