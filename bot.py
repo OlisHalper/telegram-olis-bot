@@ -221,7 +221,7 @@ def check_with_gemini(text=None, photo_bytes=None):
             contents = f"Перевір цей текст: '{text}'"
 
         response = gemini_client.models.generate_content(
-            model='gemini-1.5-flash',
+            model='gemini-2.0-flash-lite',
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
@@ -256,7 +256,7 @@ def send_welcome_message(chat_id, reply_to_message_id=None):
         "🔴 Мій <a href='{yt}'>ютуб</a>\n\n"
         "💡 <a href='{bot}'>Тут</a> ти можеш запропонувати мне свою ідею для відео\n\n"
         "Написавши коментар, ти погоджуєшся з "
-        "<a href='{rules}'>правилами</a> чату!"
+        "<a href='{rules}'>правилами</a> чату 🐳"
     ).format(inst=INST_LINK, yt=CHANNEL_LINK, rules=RULES_LINK, bot=BOT_LINK)
 
     max_retries = 3
@@ -502,10 +502,14 @@ def find_channel_post_id(message):
 def handle_messages(message):
     global USER_ACTIVITY
 
+    logging.info(f"📨 [ВХІД] chat_id={message.chat.id}, type={message.content_type}, forward={getattr(message, 'is_automatic_forward', False)}, sender_chat={message.sender_chat is not None}")
+
     if getattr(message, 'is_automatic_forward', False) or message.sender_chat is not None:
+        logging.info("⏭ [ВХІД] Пропуск: автофорвард або sender_chat")
         return
 
     if message.chat.id != DISCUSSION_GROUP_ID:
+        logging.info(f"⏭ [ВХІД] Пропуск: chat_id {message.chat.id} != {DISCUSSION_GROUP_ID}")
         return
 
     user_id = message.from_user.id
