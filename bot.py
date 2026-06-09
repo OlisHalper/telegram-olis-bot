@@ -42,6 +42,21 @@ CHANNEL_LINK = "https://www.youtube.com/@thisolis"
 INST_LINK = "https://www.instagram.com/whoisolis/"
 RULES_LINK = "https://olishalper.github.io/olis-chat-rules/"
 
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton
+
+# Постоянное нижнее меню (вместо ручного ввода /start)
+def get_main_menu_keyboard():
+    markup = ReplyKeyboardMarkup(resize_keyboard=True, is_persistent=True)
+    markup.add(KeyboardButton("💡 Надіслати ідею"))
+    markup.add(KeyboardButton("🧾 Правила чату"))
+    return markup
+
+# Клавиатура с кнопкой отмены (появляется только во время ввода идеи)
+def get_cancel_keyboard():
+    markup = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    markup.add(KeyboardButton("❌ Скасувати"))
+    return markup
+
 # === МОДЕРАЦІЯ ===
 STOP_WORDS = [
     "тероризм",
@@ -130,12 +145,16 @@ STOP_WORDS = [
     "лезбуха",
     "лезбухи",
     "национализм",
+    "негр",
+    "черножопый",
+    "чорножопий",
+    "черножопий",
     "ксенофобия",
 
     # Додайте сюди інші слова та фрази (наприклад, нецензурна лексика, екстремізм і т.д.)
 ]
 
-MUTE_DURATION_SECONDS = 3600 # 1 година
+MUTE_DURATION_SECONDS = 1800 # 30 хвилин
 FLOOD_LIMIT = 10
 TIME_WINDOW_SECONDS = 10
 USER_ACTIVITY = {} # {user_id: [(timestamp, message_id), ...]}
@@ -158,6 +177,7 @@ def send_welcome_message(chat_id, reply_to_message_id=None):
         "👋 Привіт, ти потрапив у коментарі. Внизу цікаві посилання та правила поведінки (будь ласка, почитай їх)🐳\n\n"
         "📸 Мій <a href='{inst}'>инстаграм</a>\n"
         "🔴 Мій <a href='{yt}'>ютуб</a>\n\n"
+        "🦕 <a href='{yt}'>Тут</a> ти можеш запропонувати мені свою ідею для відео <a href='{yt}'>ютуб</a>\n\n"
         "Написавши коментар, ти погоджуєшся з "
         "<a href='{rules}'>правилами</a> чату 🐳"
     ).format(inst=INST_LINK, yt=CHANNEL_LINK, rules=RULES_LINK)
@@ -212,23 +232,91 @@ def send_welcome_message(chat_id, reply_to_message_id=None):
     logging.error(f"❌ Не вдалося відправити привітання після {max_retries} спроб.")
 
 
+def process_idea_step(message):
+    # 1. Проверка на ОТМЕНУ
+    if message.text == "❌ Скасувати":
+        bot.send_message(
+            message.chat.id, 
+            "Дію скасовано. Повертаємось до головного меню.", 
+            reply_markup=get_main_menu_keyboard() # Возвращаем главное меню
+        )
+        return
+        
+    # 2. Проверка типа контента (отсекаем стикеры, голосовые и т.д.)
+    # Разрешаем только текст, фото и документы
+    if message.content_type not in ['text', 'photo', 'document']:
+        msg = bot.send_message(
+            message.chat.id, 
+            "❌ Будь ласка, надішли текст, фото або документ. Спробуй ще раз або натисни «Скасувати».", 
+            reply_markup=get_cancel_keyboard()
+        )
+        # Заново ждем ввод (повторная отправка без /start)
+        bot.register_next_step_handler(msg, process_idea_step)
+        return
+
+    # Получаем текст (либо из текстового сообщения, либо из подписи к фото/файлу)
+    idea_text = message.text or message.caption or ""
+
+    # 3. Проверка на СТОП-СЛОВА
+    # Убедись, что переменная BAD_WORDS (твой список матов) доступна здесь
+    if any(bad_word in idea_text.lower() for bad_word in BAD_WORDS):
+        msg = bot.send_message(
+            message.chat.id, 
+            "⚠️ У твоєму тексті знайдені заборонені слова. Будь ласка, перефразуй ідею і надішли знову.", 
+            reply_markup=get_cancel_keyboard()
+        )
+        bot.register_next_step_handler(msg, process_idea_step)
+        return
+
+    # 4. Пересылка идеи в чат с ЖИРНЫМ текстом
+    ADMIN_CHAT_ID = -1001234567890 # <-- Замени на ID чата, куда летят идеи
+    user_name = message.from_user.first_name
+    
+    try:
+        # Если прислали просто текст
+        if message.content_type == 'text':
+            bot.send_message(
+                ADMIN_CHAT_ID, 
+                f"💡 Нова ідея від {user_name}:\n\n**{idea_text}**", 
+                parse_mode="Markdown"
+            )
+        # Если прислали медиа с подписью
+        else:
+            bot.copy_message(
+                ADMIN_CHAT_ID, 
+                message.chat.id, 
+                message.message_id, 
+                caption=f"💡 Нова ідея від {user_name}:\n\n**{idea_text}**", 
+                parse_mode="Markdown"
+            )
+        
+        # Подтверждаем пользователю и возвращаем меню
+        bot.send_message(
+            message.chat.id, 
+            "✅ Дякую! Твою ідею успішно надіслано.", 
+            reply_markup=get_main_menu_keyboard()
+        )
+    except Exception as e:
+        bot.send_message(
+            message.chat.id, 
+            "❌ Виникла помилка при відправці. Спробуй пізніше.", 
+            reply_markup=get_main_menu_keyboard()
+        )
+
+
+
 # === КОМАНДА /start ===
 @bot.message_handler(commands=['start'])
 def send_rules(message):
     if message.chat.type == 'private':
-        # Если пользователь пишет в ЛС боту — показываем меню предложки
-        keyboard = InlineKeyboardMarkup()
-        keyboard.row(InlineKeyboardButton("💡 Надіслати ідею", callback_data="btn_submit_idea"))
-        keyboard.row(InlineKeyboardButton("🧾 Rules / Правила чату", url=RULES_LINK))
-        
         bot.send_message(
             message.chat.id,
             f"👋 **Привіт, {message.from_user.first_name}!**\n\n"
             f"У цьому боті ти можеш поділитися своєю цікавою ідеєю чи пропозицією для майбутніх відео. "
             f"Всі пропозиції розглядаються особисто автором!\n\n"
-            f"Натискай на кнопку нижче, щоб розпочати 👇",
+            f"Обирай дію в меню нижче 👇",
             parse_mode="Markdown",
-            reply_markup=keyboard
+            reply_markup=get_main_menu_keyboard() # <--- Вызываем нижнее меню
         )
     else:
         reply_id = getattr(message.reply_to_message, 'message_id', None)
@@ -236,18 +324,19 @@ def send_rules(message):
 
 
 # === БЛОК ОБРОБКИ ПРЕДЛОЖКИ (ІНЛАЙН-КНОПКА, ФІЛЬТРАЦІЯ ТА АНТИСПАМ) ===
-@bot.callback_query_handler(func=lambda call: call.data == "btn_submit_idea")
-def callback_idea(call):
-    msg = bot.send_message(
-        call.message.chat.id,
-        "📝 **Чекаю на твою ідею!**\n\n"
-        "Надішли її наступним повідомленням. Будь ласка, дотримуйся правил:\n"
-        "✅ Можна надіслати **звичайний текст** або **PDF-файл**.\n"
-        "❌ Заборонено надсилати: посилання, фото, відео, аудіо, стікери, гіфки та архіви.",
-        parse_mode="Markdown"
-    )
-    bot.register_next_step_handler(msg, save_suggestion)
-    bot.answer_callback_query(call.id)
+@bot.message_handler(func=lambda message: message.text in ["💡 Надіслати ідею", "🧾 Правила чату"] and message.chat.type == 'private')
+def handle_main_menu(message):
+    if message.text == "🧾 Правила чату":
+        bot.send_message(message.chat.id, f"Ознайомитись з правилами можна за посиланням: {RULES_LINK}")
+        
+    elif message.text == "💡 Надіслати ідею":
+        msg = bot.send_message(
+            message.chat.id,
+            "📝 Напиши свою ідею в одному повідомленні (або надішли документ/фото з описом).\n\nЯкщо передумав — тисни кнопку «Скасувати» внизу.",
+            reply_markup=get_cancel_keyboard() # <--- Меняем клавиатуру на кнопку Отмены
+        )
+        # Переводим бота в режим ожидания идеи
+        bot.register_next_step_handler(msg, process_idea_step)
 
 def save_suggestion(message):
     # Скасування, якщо ввели іншу команду
