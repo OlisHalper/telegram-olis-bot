@@ -221,7 +221,7 @@ def check_with_gemini(text=None, photo_bytes=None):
             contents = f"Перевір цей текст: '{text}'"
 
         response = gemini_client.models.generate_content(
-            model='gemini-2.0-flash',
+            model='gemini-1.5-flash',
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
@@ -256,7 +256,7 @@ def send_welcome_message(chat_id, reply_to_message_id=None):
         "🔴 Мій <a href='{yt}'>ютуб</a>\n\n"
         "💡 <a href='{bot}'>Тут</a> ти можеш запропонувати мне свою ідею для відео\n\n"
         "Написавши коментар, ти погоджуєшся з "
-        "<a href='{rules}'>правилами</a> чату"
+        "<a href='{rules}'>правилами</a> чату!"
     ).format(inst=INST_LINK, yt=CHANNEL_LINK, rules=RULES_LINK, bot=BOT_LINK)
 
     max_retries = 3
