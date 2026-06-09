@@ -65,102 +65,147 @@ def get_cancel_keyboard():
 
 # === МОДЕРАЦІЯ ===
 STOP_WORDS = [
-    "тероризм",
-    "зароби",
-    "швидкий дохід",
-    "крипта",
-    "злив",
-    "продаю",
-    "куплю",
-
-    # Війни / Екстремізм
-    "геноцид",
-    "фашизм",
-    "нацизм",
-    "екстремізм",
-    "терор",
-    "путін",
-    "русня",
-    "хохли",
-    "хохол",
-    "підор",
-    "зеля",
-    "зеленський",
-
-    # Заборонений контент (Педофілія, Зоофілія)
-    "педофілія",
-    "педофіл",
-    "зоофілія",
-    "нсфл", # NSFW/NSFL в українському сленгу
-    "дитяче порно",
-    "порнографія з тваринами",
-
-    # Дискримінація (Расизм, Сексизм, Гомофобія)
-    "підораси",
-    "педик",
-    "здохни",
-    "лесбуха",
-    "лесбухи",
-    "лезбуха",
-    "лезбухи",
-    "націоналізм",
-    "ксенофобія",
     
-    # Додайте сюди інші слова та фрази (наприклад, нецензурна лексика, екстремізм і т.д.)
-
-    
-     "терроризм",
+    "переходи по ссылке",
     "заработай",
     "быстрый доход",
     "крипта",
     "слив",
     "продаю",
+    "ставки",
     "куплю",
+    "ссылка в профиле",
+    "приватка",
+    "приватный канал",
+    "успей вступить",
+    "сливы",
+    "заработок",
+    "ищу воркеров",
+    "схема заработка",
+    "легкие деньги",
+    "раскрутка счета",
+    "трейдинг",
+    "арбитраж",
+    "капер",
+    "казино",
+    "слоты",
+    "букмекерская",
+    "премиум бесплатно",
+    "дарю прем",
+    "подтвердите аккаунт",
+    "аккаунт заблокирован",
+    "введите пароль",
+    "пройдите верификацию",
+    "премиум бесплатно",
+    "premium бесплатно",
+    "дарю премиум",
+    "раздача прем",
+    "раздача премиум",
+    "раздача премиума",
+    "раздача премиумов",
+    "розыгрыш",
+    "заберите приз",
+    "акция телеграм",
 
     # Войны / Экстремизм
 
-    "геноцид",
-    "фашизм",
-    "нацизм",
-    "экстремизм",
+    "суицид",
+    "самоубийство",
+    "повешался",
+    "повесился",
+    "вскрылся",
+    "вскрыться",
+    "вскроюсь",
+    "вскройся",
+    "повешайся",
+    "повешусь",
+    "повесься",
+    "прирезать",
+    "взорвать",
+    "купить ствол",
+    "купить пистолет",
+    "купить нож",
+    "трупы",
+    "расчлененка",
+    "пытки",
+    "избиение",
     "террор",
     "путин",
     "русня",
     "хохлы",
     "хохол",
-    "пидор",
     "зеля",
-    "зеленский",
 
-    # Запрещенный контент (Педофилия, Зоофилия)
 
-    "педофилия",
-    "педофил",
-    "зоофилия",
+    # Запрещенный контент (Педофилия, Зоофилия, Наркотики)
+
     "нсфл", # NSFW/NSFL в русском сленге
     "детское порно",
     "порнография с животными",
+    "кладка",
+    "шоп",
+    "меф",
+    "бошки",
+    "гаш",
+    "амф",
+    "mdma",
+    "мдма",
+    "экстази",
+    "кокс",
+    "героин",
+    "гашиш",
+    "hydra",
+    "гидра",
 
-    # Дискриминация (Расизм, Сексизм, Гомофобия)
+    # Дискриминация (Расизм, Сексизм, Гомофобия, Оскорбления)
 
-    "пидорасы",
-    "педик",
+    "пидоросня",
+    "пидорасня",
     "сдохни",
     "лесбуха",
     "лесбухи",
     "лезбуха",
     "лезбухи",
-    "национализм",
+    "нига",
     "негр",
     "черножопый",
     "чорножопий",
     "черножопий",
-    "ксенофобия",
+    "инцел",
+    "черномазый",
+    "даун",
+    "аутист",
+    "урод",
+    "тварь",
+    "мразь",
+    "гнида",
+    "скотина",
+    "ничтожество",
+    "выродок",
+    "недоносок",
+    "падаль",
+    "шлюха",
+    "шалава",
+
+    # Контент для взрослых (18+ / Эротика)
+
+    "порно",
+    "порнуха",
+    "porno",
+
+    "нюдсы",
+    "слив фото",
+    "сливы интим",
+    "сливы интимок",
+    "слив интимок",
+    "слив интим",
+    "вирт",
+
 
     # Додайте сюди інші слова та фрази (наприклад, нецензурна лексика, екстремізм і т.д.)
 ]
 
-MUTE_DURATION_SECONDS = 1800 # 30 хвилин
+MUTE_DURATION_SECONDS = 900 # 15 хвилин
 FLOOD_LIMIT = 10
 TIME_WINDOW_SECONDS = 10
 USER_ACTIVITY = {} # {user_id: [(timestamp, message_id), ...]}
@@ -238,8 +283,6 @@ def send_welcome_message(chat_id, reply_to_message_id=None):
     logging.error(f"❌ Не вдалося відправити привітання після {max_retries} спроб.")
 
 
-# === БЛОК ОБРОБКИ ПРЕДЛОЖКИ (НОВЕ МЕНЮ, ФІЛЬТРАЦІЯ ТА АНТИСПАМ) ===
-
 def process_idea_step(message):
     try:
         # 1. ОБРАБОТКА КНОПКИ «СКАСУВАТИ» ИЛИ ЛЮБОЙ КОМАНДЫ (НАПРИМЕР, /start)
@@ -255,10 +298,26 @@ def process_idea_step(message):
         # 2. СТРОГАЯ ФИЛЬТРАЦИЯ ПО ТИПУ (Только ТЕКСТ или PDF)
         is_valid = False
         idea_text = ""
+        normalized_text = "" # Переменная для очищенного текста
 
         if message.content_type == 'text':
             is_valid = True
             idea_text = message.text
+            
+            # --- УМНАЯ ОЧИСТКА ТЕКСТА ОТ СМАЙЛОВ И ЗНАКОВ ПРЕПИНАНИЯ ---
+            import re
+            normalized_text = re.sub(r'[^a-zA-Z0-9а-яА-ЯёЁіІїЇєЄґҐ]', '', idea_text).lower()
+            
+            # Если после очистки ничего не осталось — значит, там были только смайлы/точки
+            if not normalized_text:
+                bot.send_message(
+                    message.chat.id, 
+                    "⚠️ **Ідея не може складатися лише зі смайликів або розділових знаків!**\n\nБудь ласка, напиши свою пропозицію текстом.", 
+                    parse_mode="Markdown",
+                    reply_markup=get_cancel_keyboard()
+                )
+                bot.register_next_step_handler(message, process_idea_step)
+                return
             
         elif message.content_type == 'document':
             file_name = message.document.file_name.lower() if message.document.file_name else ""
@@ -281,19 +340,47 @@ def process_idea_step(message):
             bot.register_next_step_handler(message, process_idea_step)
             return
 
-        # 3. ФИЛЬТРАЦИЯ ПО ТРИГГЕР-СЛОВАМ (Сверяемся со STOP_WORDS)
-        if any(bad_word.lower() in idea_text.lower() for bad_word in STOP_WORDS):
+        # === 2.5 ПРОВЕРКА НА ДУБЛИКАТЫ И СПАМ ===
+        if message.content_type == 'text':
+            if normalized_text in PROCESSED_TEXT_IDEAS: # Проверяем именно очищенный текст
+                bot.send_message(
+                    message.chat.id, 
+                    "⚠️ **Ця ідея вже була надіслана раніше!**\n\nБудь ласка, не спам іншу або таку саму пропозицію.", 
+                    parse_mode="Markdown",
+                    reply_markup=get_main_menu_keyboard()
+                )
+                return
+        elif message.content_type == 'document':
+            file_uid = message.document.file_unique_id
+            if file_uid in PROCESSED_FILE_IDEAS:
+                bot.send_message(
+                    message.chat.id, 
+                    "⚠️ **Цей файл уже був надісланий раніше!**\n\nБудь ласка, не надсилай дублікати.", 
+                    parse_mode="Markdown",
+                    reply_markup=get_main_menu_keyboard()
+                )
+                return
+
+        # === 3. ФИЛЬТРАЦИЯ ПО ТРИГГЕР-СЛОВАМ (Сверяемся со STOP_WORDS) ===
+        # Находим все стоп-слова, которые есть в тексте пользователя
+        triggered_words = [word for word in STOP_WORDS if word.lower() in idea_text.lower()]
+        
+        if triggered_words:
+            # Красиво оформляем найденные слова в кавычки через запятую
+            found_words_str = ", ".join(f'"{word}"' for word in triggered_words)
+            
             bot.send_message(
                 message.chat.id, 
-                "⚠️ **У твоїй ідеї знайдені заборонені слова!**\n\n"
-                "Будь ласка, перефразуй свою пропозицію без використання мату та надішли знову:", 
+                f"⚠️ **У твоїй ідеї знайдено заборонене слово:** {found_words_str}\n\n"
+                f"Будь ласка, перефразуй свою пропозицію без этого слова та надішли знову:", 
                 parse_mode="Markdown",
                 reply_markup=get_cancel_keyboard()
             )
             bot.register_next_step_handler(message, process_idea_step)
             return
 
-        # 4. ПЕРЕСЫЛКА В ЧАТ С ВЫДЕЛЕНИЕМ ЖИРНЫМ
+        
+        # === 4. ПРЕСЫЛКА В ЧАТ С ВЫДЕЛЕНИЕМ ЖИРНЫМ ===
         user_username = f"@{message.from_user.username}" if message.from_user.username else "Немає юзернейму"
         user_info = f"👤 Від: {message.from_user.first_name} ({user_username}) | ID: `{message.from_user.id}`"
         
@@ -304,7 +391,13 @@ def process_idea_step(message):
             caption_text = f"💡 **Нова ідея (PDF-файл) через бота!**\n\n📁 Файл: {message.document.file_name}\n**Опис:** {idea_text}\n\n{user_info}\n\n#предложка"
             bot.send_document(ADMIN_CHAT_ID, message.document.file_id, caption=caption_text, parse_mode="Markdown")
 
-        # 5. УСПЕШНЫЙ ФИНАЛ С АНИМАЦИЕЙ БЛАГОДАРНОСТИ И ВОЗВРАТ МЕНЮ
+        # === 4.5 СОХРАНЕНИЕ В ПАМЯТЬ ДЛЯ ЗАЩИТЫ ОТ ПОВТОРОВ ===
+        if message.content_type == 'text':
+            PROCESSED_TEXT_IDEAS.add(normalized_text)
+        elif message.content_type == 'document':
+            PROCESSED_FILE_IDEAS.add(message.document.file_unique_id)
+
+        # === 5. УСПЕШНЫЙ ФИНАЛ С АНИМАЦИЕЙ БЛАГОДАРНОСТИ И ВОЗВРАТ МЕНЮ ===
         thank_you_caption = (
             "🥰 **Дякую! Твою ідею успешно відправлено автору.**\n\n"
             "Обов'язково чекай на згадку свого нікнейму у відео, якщо ідея сподобається і буде взята в роботу! 🎬🐳"
@@ -326,7 +419,6 @@ def process_idea_step(message):
             reply_markup=get_main_menu_keyboard()
         )
 
-
 # Хэндлер, который ловит нажатия кнопок главного меню
 @bot.message_handler(func=lambda message: message.text in ["💡 Надіслати ідею", "🧾 Правила чату"] and message.chat.type == 'private')
 def handle_main_menu(message):
@@ -342,6 +434,41 @@ def handle_main_menu(message):
             reply_markup=get_cancel_keyboard()
         )
         bot.register_next_step_handler(message, process_idea_step)
+
+# === АНТИСПАМ ДЛЯ КОММЕНТАРИЕВ (УДАЛЕНИЕ ССЫЛОК) ===
+
+@bot.message_handler(func=lambda message: message.chat.type in ['group', 'supergroup'])
+def filter_links_in_comments(message):
+    try:
+        # 1. ИСКЛЮЧЕНИЕ: Если сообщение пришло от лица канала 
+        # или это автоматический пересыл поста из канала в комменты — игнорируем
+        if message.sender_chat is not None or getattr(message, 'is_automatic_forward', False):
+            return
+
+        # 2. ПРОВЕРКА НА НАЛИЧИЕ ССЫЛОК
+        has_link = False
+
+        # Проверяем ссылки в обычном тексте
+        if message.entities:
+            for entity in message.entities:
+                if entity.type in ['url', 'text_link']:
+                    has_link = True
+                    break
+
+        # Проверяем ссылки в подписях к картинкам/видео
+        if message.caption_entities:
+            for entity in message.caption_entities:
+                if entity.type in ['url', 'text_link']:
+                    has_link = True
+                    break
+
+        # 3. УДАЛЕНИЕ: Если обычный юзер прислал ссылку — удаляем сообщение
+        if has_link:
+            bot.delete_message(message.chat.id, message.message_id)
+            
+    except Exception as e:
+        import logging
+        logging.error(f"Помилка при видаленні посилання в коментарях: {e}")
 
 
 # === КОМАНДА /start ===
