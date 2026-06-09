@@ -4,10 +4,11 @@ import os
 import time
 import datetime
 import logging
-from telebot import apihelper 
+from telebot import apihelper
 from flask import Flask, request
 import threading
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 # === НАЛАШТУВАННЯ ЛОГУВАННЯ ===
 # Налаштовуємо логування, щоб бачити, що відбувається в консолі
@@ -36,30 +37,21 @@ else:
     logging.info("✅ GEMINI_API_KEY знайдено, Gemini модерація активна.")
 genai.configure(api_key=API_KEY)
 
-# === НАЛАШТУВАННЯ БЕЗПЕКИ (ЦЕ ВАЖЛИВО!) ===
-# Використовуємо enum-формат для сумісності з новими версіями google-generativeai (1.x+)
-# Ми кажемо Google: "Не блокуй запити, навіть якщо там є мат або агресія"
-try:
-    from google.generativeai.types import HarmCategory, HarmBlockThreshold
-    safety_settings = {
-        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-    }
-    logging.info("✅ Gemini safety_settings: використовується новий enum-формат (google-generativeai 1.x+)")
-except ImportError:
-    # Старий формат для версій < 1.0
-    safety_settings = [
-        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-    ]
-    logging.info("✅ Gemini safety_settings: використовується старий рядковий формат (google-generativeai < 1.0)")
+# === GEMINI AI ===
+API_KEY = os.getenv("GEMINI_API_KEY")
+if not API_KEY:
+    logging.error("❌ GEMINI_API_KEY не знайдено! Модерація Gemini не працюватиме.")
+else:
+    logging.info("✅ GEMINI_API_KEY знайдено, Gemini модерація активна.")
+gemini_client = genai.Client(api_key=API_KEY)
+GEMINI_SAFETY_SETTINGS = [
+    types.SafetySetting(category='HARM_CATEGORY_HARASSMENT', threshold='BLOCK_NONE'),
+    types.SafetySetting(category='HARM_CATEGORY_HATE_SPEECH', threshold='BLOCK_NONE'),
+    types.SafetySetting(category='HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold='BLOCK_NONE'),
+    types.SafetySetting(category='HARM_CATEGORY_DANGEROUS_CONTENT', threshold='BLOCK_NONE'),
+]
+logging.info("✅ Gemini клієнт ініціалізовано (google-genai)")
 
-# Ініціалізація моделі ОБОВ'ЯЗКОВО з safety_settings
-model = genai.GenerativeModel('gemini-1.5-flash', safety_settings=safety_settings)
 
 # === ОСНОВНІ ПОСИЛАННЯ ТА ID ===
 CHANNEL_USERNAME = "@whoisolis"
@@ -243,12 +235,11 @@ USER_ACTIVITY = {} # {user_id: [(timestamp, message_id), ...]}
 PROCESSED_MEDIA_GROUPS = {} # {media_group_id: timestamp}
 MEDIA_GROUP_TIMEOUT = 10 # Час, протягом якого повідомлення вважаються частиною групи (в секундах)
 
+# === GEMINI ФУНКЦІЯ ПЕРЕВІРКИ ===
 def check_with_gemini(text=None, photo_bytes=None):
     try:
-        # Захист: якщо нічого перевіряти, виходимо
         if not text and not photo_bytes:
             return False
-
         contents = []
         prompt = (
             "Ти — модератор чату. Твоє завдання: перевірити вхідний контент на наявність образ, "
@@ -256,17 +247,17 @@ def check_with_gemini(text=None, photo_bytes=None):
             "Відповідай ТІЛЬКИ ОДНИМ СЛОВОМ: 'YES' (якщо є порушення) або 'NO' (якщо все добре)."
         )
         contents.append(prompt)
-        
         if text:
             contents.append(f"Контент: '{text}'")
-            
         if photo_bytes:
-            contents.append({'mime_type': 'image/jpeg', 'data': photo_bytes})
-            
-        # Запит до моделі
-        response = model.generate_content(contents)
-        
-        # Логування результату, щоб бачити, що саме відповів AI
+            contents.append(types.Part.from_bytes(data=photo_bytes, mime_type='image/jpeg'))
+        response = gemini_client.models.generate_content(
+            model='gemini-1.5-flash',
+            contents=contents,
+            config=types.GenerateContentConfig(
+                safety_settings=GEMINI_SAFETY_SETTINGS
+            )
+        )
         if response.text:
             result = response.text.strip().upper()
             logging.info(f"🤖 [GEMINI DEBUG] Модель відповіла: {result}")
@@ -274,11 +265,10 @@ def check_with_gemini(text=None, photo_bytes=None):
         else:
             logging.warning("🤖 [GEMINI] Модель повернула пусту відповідь.")
             return False
-            
     except Exception as e:
-        # Тут ми бачимо, чому конкретно впав запит
         logging.error(f"❌ [GEMINI ERROR] Помилка запиту: {e}")
         return False
+
 
 # === КНОПКИ ===
 def get_buttons():
@@ -290,7 +280,7 @@ def get_buttons():
 def send_welcome_message(chat_id, reply_to_message_id=None):
     """Відправляє привітання, намагаючись повторно, щоб уникнути помилки 'message to be replied not found'."""
     caption = (
-        "👋 Привіт, ти потрапив у коментарі. Внизу цікаві посилання та правила поведінки (будь ласка, почитай їх)🐳\n\n"
+        "👋 Привіт, ти потрапив у коментарі. Внизу цікаві посилання та правила поведінки (будь ласка, почитай їх)\n\n"
         "📸 Мій <a href='{inst}'>инстаграм</a>\n"
         "🔴 Мій <a href='{yt}'>ютуб</a>\n\n"
         "💡 <a href='{bot}'>Тут</a> ти можеш запропонувати мне свою ідею для відео\n\n"
